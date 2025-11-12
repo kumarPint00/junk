@@ -1,0 +1,36 @@
+{
+  "name": "mindworksai-server",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ccxt": "^4.0.7",
+    "connect-mongo": "^5.0.0",
+    "cookie-parser": "^1.4.6",
+    "axios": "^1.4.0",
+    "bcrypt": "^5.0.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^10.0.0",
+    "execp": "^0.0.1",
+    "express": "^4.17.1",
+    "express-session": "^1.17.3",
+    "node-cache": "^5.1.2",
+    "fs": "^0.0.1-security",
+    "jsonwebtoken": "^8.5.1",
+    "mongoose": "^6.1.1",
+    "path": "^0.12.7",
+    "request": "^2.88.2",
+    "helmet": "^7.0.0",
+    "jsonwebtoken": "^9.0.1",
+    "socket.io": "^4.7.1",
+    "yup": "^1.2.0"
+  }
+}
