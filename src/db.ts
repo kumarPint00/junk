@@ -18,7 +18,7 @@ class PlotToGharDB extends Dexie {
   constructor() {
     super('plot-to-ghar-v1');
     this.version(1).stores({
-      projects: 'id, status, updatedAt',
+      projects: 'id, status, createdAt, updatedAt',
       accounts: 'id, projectId, kind, active, updatedAt',
       fundingSources: 'id, projectId, type, updatedAt',
       milestones: 'id, projectId, sequence, status, updatedAt',
