@@ -1,0 +1,54 @@
+name: Build Plot to Ghar V1 APK
+
+on:
+  push:
+    branches: [plot-to-ghar-v1-build]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct V1 source
+        shell: bash
+        run: |
+          cat buildsrc/part*.b64 | tr -d '\n' | base64 -d > /tmp/plot-v1-src.tgz
+          tar -xzf /tmp/plot-v1-src.tgz
+          test -f app/src/main/java/com/plottoghar/v1/MainActivity.java
+          test -f app/src/main/java/com/plottoghar/v1/DbHelper.java
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Build APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Prepare artifact
+        run: cp app/build/outputs/apk/debug/app-debug.apk plot-to-ghar-v1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: plot-to-ghar-v1-apk
+          path: plot-to-ghar-v1.apk
+          if-no-files-found: error
+          retention-days: 30
