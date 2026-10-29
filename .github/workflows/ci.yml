@@ -1,0 +1,27 @@
+name: Plot to Ghar Web CI
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'plot-to-ghar/web/**'
+      - 'plot-to-ghar/.ci-trigger'
+  pull_request:
+    paths:
+      - 'plot-to-ghar/web/**'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plot-to-ghar/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
