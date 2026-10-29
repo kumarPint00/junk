@@ -3,6 +3,7 @@ name: Production Android APK
 on:
   push:
     branches: [main]
+    tags: ['ptg-v*']
     paths:
       - 'src/**'
       - 'api/**'
@@ -13,9 +14,6 @@ on:
       - 'scripts/**'
       - '.github/workflows/production-android.yml'
   workflow_dispatch:
-  push:
-    tags:
-      - 'ptg-v*'
 
 permissions:
   contents: read
