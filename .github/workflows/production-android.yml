@@ -10,6 +10,7 @@ on:
       - 'public/**'
       - 'package.json'
       - 'vite.config.ts'
+      - 'vitest.config.ts'
       - 'capacitor.config.ts'
       - 'scripts/**'
       - '.github/workflows/production-android.yml'
