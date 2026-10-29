@@ -1,5 +1,9 @@
+import { Capacitor } from '@capacitor/core';
 import { db, exportSnapshot, importSnapshot, mergeSnapshots, bumpRevision } from './db';
 import type { AppSnapshot, Attachment } from './types';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || (Capacitor.isNativePlatform() ? 'https://plot-to-ghar-kumarpint00.vercel.app' : '')).replace(/\/$/, '');
+const api = (path: string) => API_BASE + path;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -96,7 +100,7 @@ export async function clearSyncKey() {
 
 async function downloadRemote(syncKey: string): Promise<AppSnapshot | null> {
   const id = await getSyncId(syncKey);
-  const response = await fetch('/api/sync?id=' + encodeURIComponent(id), { cache: 'no-store' });
+  const response = await fetch(api('/api/sync?id=') + encodeURIComponent(id), { cache: 'no-store' });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('Cloud download failed');
   const { payload } = await response.json();
@@ -106,7 +110,7 @@ async function downloadRemote(syncKey: string): Promise<AppSnapshot | null> {
 async function uploadRemote(snapshot: AppSnapshot, syncKey: string) {
   const id = await getSyncId(syncKey);
   const payload = await encryptJson(snapshot, syncKey);
-  const response = await fetch('/api/sync?id=' + encodeURIComponent(id), {
+  const response = await fetch(api('/api/sync?id=') + encodeURIComponent(id), {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ payload })
@@ -131,7 +135,7 @@ export async function uploadAttachment(attachment: Attachment, syncKey: string) 
   }
   const id = await getSyncId(syncKey);
   const encrypted = await encryptBlob(attachment.localBlob, syncKey);
-  const response = await fetch('/api/attachment?id=' + encodeURIComponent(id), {
+  const response = await fetch(api('/api/attachment?id=') + encodeURIComponent(id), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
