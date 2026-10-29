@@ -1,29 +1,26 @@
-name: Plot to Ghar Production Web CI
+name: Plot to Ghar Web CI
 
 on:
   push:
     branches: [main]
     paths:
-      - 'src/**'
-      - 'api/**'
-      - 'public/**'
-      - 'package.json'
-      - 'vite.config.ts'
-      - 'vitest.config.ts'
-      - 'vercel.json'
-      - 'tsconfig*.json'
-      - 'capacitor.config.ts'
+      - 'plot-to-ghar/web/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'plot-to-ghar/web/**'
 
 permissions:
   contents: read
 
 jobs:
-  verify:
+  test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: plot-to-ghar/web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,12 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Financial integrity tests
-        run: npm run test
-      - name: TypeScript and production build
+        run: npm test
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Production build
         run: npm run build
-      - name: Upload verified web bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: plot-to-ghar-production-web
-          path: dist
-          retention-days: 14
