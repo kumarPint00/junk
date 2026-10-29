@@ -190,8 +190,8 @@ export async function importSnapshot(snapshot: AppSnapshot) {
   if (snapshot.schemaVersion !== 1) throw new Error('Unsupported backup version');
   await db.transaction(
     'rw',
-    db.projects, db.accounts, db.fundingSources, db.milestones,
-    db.parties, db.materials, db.transactions, db.attachments, db.syncMeta,
+    [db.projects, db.accounts, db.fundingSources, db.milestones,
+     db.parties, db.materials, db.transactions, db.attachments, db.syncMeta],
     async () => {
       if (snapshot.project) await db.projects.put(snapshot.project);
       await db.accounts.bulkPut(snapshot.accounts);
