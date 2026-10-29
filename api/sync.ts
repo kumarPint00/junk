@@ -5,6 +5,11 @@ const validId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{40,80}$/.test(value);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, POST, OPTIONS');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   const id = req.query.id;
   if (!validId(id)) return res.status(400).json({ error: 'invalid sync id' });
 
