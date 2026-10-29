@@ -17,6 +17,10 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
       VITE_API_BASE_URL: https://plot-to-ghar-kumarpint00.vercel.app
+      RELEASE_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -71,12 +75,12 @@ jobs:
           retention-days: 30
 
       - name: Configure stable release signing
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.RELEASE_KEYSTORE_B64 != ''
         env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_BASE64: ${{ env.RELEASE_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ env.RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ env.RELEASE_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ env.RELEASE_KEY_PASSWORD }}
           ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/android/app/plot-to-ghar-release.jks
         run: |
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
@@ -85,13 +89,13 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
       - name: Prepare release artifact
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.RELEASE_KEYSTORE_B64 != ''
         run: |
           cp android/app/build/outputs/apk/release/app-release.apk plot-to-ghar-release.apk
           sha256sum plot-to-ghar-release.apk
 
       - uses: actions/upload-artifact@v4
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
+        if: env.RELEASE_KEYSTORE_B64 != ''
         with:
           name: plot-to-ghar-release-apk
           path: plot-to-ghar-release.apk
