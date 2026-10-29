@@ -1,0 +1,6 @@
+import { NextResponse } from 'next/server';
+import { requireAuth, err } from '@/lib/api';
+import { getTransaction, putTransaction } from '@/lib/store';
+import type { Transaction, TxType } from '@/lib/types';
+function reversal(type:TxType):TxType{ if(type==='EXPENSE') return 'REFUND'; if(type==='FUNDING_IN') return 'TRANSFER'; if(type==='ADVANCE') return 'ADVANCE_ADJUSTMENT'; throw new Error('This transaction cannot be auto-voided. Add a correcting entry instead.'); }
+export async function POST(req:Request){ const no=await requireAuth(); if(no)return no; try{ const {id,destinationAccountId}=await req.json(); const old=await getTransaction(id); if(!old) return err(new Error('Transaction not found'),404); const type=reversal(old.type); const t:Transaction={id:crypto.randomUUID(),createdAt:new Date().toISOString(),transactionDate:new Date().toISOString(),type,amount:old.amount,sourceAccountId:type==='TRANSFER'?old.destinationAccountId:undefined,destinationAccountId:type==='TRANSFER'?old.sourceAccountId:type==='REFUND'?(destinationAccountId||old.sourceAccountId):undefined,fundingSourceId:old.fundingSourceId,milestoneId:old.milestoneId,category:`Reversal: ${old.category||old.type}`,description:`Void/reversal of ${old.id}`,reversalOf:old.id}; await putTransaction(t); return NextResponse.json({transaction:t}); }catch(e){return err(e);} }

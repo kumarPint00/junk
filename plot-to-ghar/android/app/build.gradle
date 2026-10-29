@@ -1,0 +1,22 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.plottoghar.app'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'com.plottoghar.app'
+        minSdk 26
+        targetSdk 35
+        versionCode 100
+        versionName '1.0.0'
+        buildConfigField 'String', 'APP_URL', '"https://plot-to-ghar.vercel.app"'
+    }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug { minifyEnabled false }
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
