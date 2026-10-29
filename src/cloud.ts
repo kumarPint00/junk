@@ -2,7 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { db, exportSnapshot, importSnapshot, mergeSnapshots, bumpRevision } from './db';
 import type { AppSnapshot, Attachment } from './types';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || (Capacitor.isNativePlatform() ? 'https://plot-to-ghar-kumarpint00.vercel.app' : '')).replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || (Capacitor.isNativePlatform() ? 'https://plot-to-ghar-kumarpint00-kumarpint00s-projects.vercel.app' : '')).replace(/\/$/, '');
 const api = (path: string) => API_BASE + path;
 
 const encoder = new TextEncoder();
