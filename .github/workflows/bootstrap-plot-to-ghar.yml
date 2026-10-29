@@ -2,7 +2,9 @@ name: Bootstrap Plot to Ghar Production Source
 on:
   push:
     branches: [main]
-    paths: ['.bootstrap/plot-to-ghar-prod.b64', '.github/workflows/bootstrap-plot-to-ghar.yml']
+    paths:
+      - '.bootstrap/parts/**'
+      - '.github/workflows/bootstrap-plot-to-ghar.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -17,7 +19,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 -d .bootstrap/plot-to-ghar-prod.b64 > /tmp/ptg.tgz
+          cat .bootstrap/parts/*.b64 | tr -d '\n' | base64 -d > /tmp/ptg.tgz
+          tar -tzf /tmp/ptg.tgz >/dev/null
           tar -xzf /tmp/ptg.tgz
           test -f plot-to-ghar/web/package.json
           test -f plot-to-ghar/android/app/src/main/java/com/plottoghar/app/MainActivity.java
