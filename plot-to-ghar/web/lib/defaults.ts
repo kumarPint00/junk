@@ -180,6 +180,13 @@ export function validateProjectState(state: ProjectState) {
     if (!work.name.trim() || !work.startDate || !work.endDate || work.endDate < work.startDate) throw new Error('Invalid construction schedule dates.');
     if (!Number.isFinite(work.estimatedCost) || work.estimatedCost < 0) throw new Error('Invalid work estimate.');
     if (work.dependsOnId && (!workIds.has(work.dependsOnId) || work.dependsOnId === work.id)) throw new Error('Invalid task dependency.');
+    const visited = new Set<string>([work.id]);
+    let current = work.dependsOnId;
+    while (current) {
+      if (visited.has(current)) throw new Error('Circular task dependencies are not allowed.');
+      visited.add(current);
+      current = state.construction.schedule.find((w)=>w.id===current)?.dependsOnId;
+    }
   }
   for (const a of state.construction.agreements) {
     if (!a.title.trim() || !a.scope.trim() || !Number.isFinite(a.value) || a.value < 0) throw new Error('Invalid contractor agreement.');
@@ -222,8 +229,10 @@ export function validateStateTransition(previous: ProjectState, next: ProjectSta
     }
   }
   const knownPhases = new Set(next.phases.map((p) => p.id));
+  const knownFloors = new Set(next.construction.floors.map((f) => f.id));
   for (const t of transactions) {
     if (t.phaseId && !knownPhases.has(t.phaseId)) throw new Error('Cannot delete a phase used by the ledger.');
+    if (t.floorId && !knownFloors.has(t.floorId)) throw new Error('Cannot delete a floor used by the ledger.');
   }
   return next;
 }
