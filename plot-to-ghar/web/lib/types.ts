@@ -233,6 +233,10 @@ export type Transaction = {
   attachments?: AttachmentRef[];
   reversalOf?: string;
   linkedTransactionId?: string;
+  loanFacilityId?: string;
+  loanPrincipalAmount?: number;
+  loanInterestAmount?: number;
+  loanFeeAmount?: number;
 };
 
 export type LedgerSummary = {
@@ -243,6 +247,10 @@ export type LedgerSummary = {
   fundingReceived: number;
   advancesOutstanding: number;
   loanRepayments: number;
+  loanPrincipalPaid: number;
+  loanInterestPaid: number;
+  loanFeesPaid: number;
+  unallocatedLoanRepayments: number;
   accountBalances: Record<string, number>;
   phaseSpend: Record<string, number>;
   categorySpend: Record<string, number>;
