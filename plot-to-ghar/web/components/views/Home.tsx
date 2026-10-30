@@ -26,7 +26,11 @@ export function Home({
   const phasesExceptPlot = state.phases.filter((p) => !/^(plot purchase)$/i.test(p.name.trim()));
   const phaseBudget = phasesExceptPlot.reduce((a, p) => a + Number(p.budgetAmount || 0), 0);
   const acquisitionBudget = Number(state.project.agreedPurchasePrice || 0);
-  const totalBudget = acquisitionBudget + phaseBudget;
+  const floorBudget = state.construction.floors.reduce((sum, f) => sum + Number(f.budgetAmount || 0), 0);
+  // Construction budgets may be organized by floor or phase. Use one method
+  // rather than adding both and counting the same planned work twice.
+  const activeConstructionBudget = floorBudget > 0 ? floorBudget : phaseBudget;
+  const totalBudget = acquisitionBudget + activeConstructionBudget;
   const budgetRemaining = totalBudget ? totalBudget - summary.projectCost : 0;
   const next = state.milestones
     .slice().sort((a, b) => a.sequence - b.sequence)
@@ -209,6 +213,20 @@ export function Home({
             <progress max={Math.max(1, f.committedAmount)} value={Math.max(0,Math.min(received, f.committedAmount))}/>
           </div>;
         })}
+      </section>
+
+      <section className="panel">
+        <h2>Floor-wise budgets vs actual expenses</h2>
+        <p className="muted">{floorBudget > 0 ? 'Floor budgets are used for the dashboard total. Phase budgets are tracked separately to prevent double counting.' : 'Set floor budgets to use them as the dashboard construction budget instead of phase estimates.'}</p>
+        {state.construction.floors.map((floor) => {
+          const spent = summary.floorSpend[floor.id] || 0;
+          return <div className="fund" key={floor.id}>
+            <div className="row"><span>{floor.name}</span><b>{money(spent)} / {money(floor.budgetAmount)}</b></div>
+            <progress max={Math.max(1,floor.budgetAmount)} value={Math.max(0,Math.min(spent,floor.budgetAmount))}/>
+          </div>;
+        })}
+        {summary.unallocatedConstructionCost > 0 && <p className="warning">Unallocated construction expense: {money(summary.unallocatedConstructionCost)}. Link future expense records to a floor. Existing transactions remain unchanged.</p>}
+        <button className="secondary small" onClick={() => navigate('build')}>Edit floor budgets</button>
       </section>
 
       <section className="panel">
