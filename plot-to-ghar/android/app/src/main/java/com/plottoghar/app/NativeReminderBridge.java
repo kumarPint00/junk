@@ -100,7 +100,7 @@ public final class NativeReminderBridge {
                 for (String id : oldIds) {
                     if (!newIds.contains(id)) cancelOne(activity, id);
                 }
-                prefs.edit().putStringSet(IDS, newIds).apply();
+                prefs.edit().putStringSet(IDS, newIds).putString("reminders_json", json).apply();
             } catch (Exception ignored) {
                 // Invalid client state must never crash the Android shell.
             }
