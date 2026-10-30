@@ -74,6 +74,8 @@ export function dueReminders(reminders: ProjectReminder[], now: Date) {
     const [year, month, day] = r.dueDate.split('-').map(Number);
     if (!year || month < 1 || month > 12 || day < 1 || day > 31) return false;
     if (r.repeat === 'MONTHLY') {
+      const period = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2,'0');
+      if (r.lastCompletedMonth === period) return false;
       const expectedDay = Math.min(day, new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate());
       const dueThisMonth = new Date(date.getFullYear(), date.getMonth(), expectedDay);
       return date >= new Date(year, month - 1, day) && date >= dueThisMonth;
