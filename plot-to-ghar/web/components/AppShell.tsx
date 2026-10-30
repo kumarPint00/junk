@@ -404,7 +404,7 @@ export function AppShell() {
           return;
         }
 
-        const existingSettlements = transactions.filter((x) => x.linkedTransactionId === old.id && ['REFUND', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(x.type));
+        const existingSettlements = txs.filter((x) => x.linkedTransactionId === old.id && ['REFUND', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(x.type));
     if (existingSettlements.length) throw new Error('This entry has linked settlements or refunds; reverse them through dedicated correcting entries before voiding.');
     const type = reversalType(old.type);
         const reversal: Transaction = {
