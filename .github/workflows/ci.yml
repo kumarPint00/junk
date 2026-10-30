@@ -2,7 +2,7 @@ name: Plot to Ghar Web CI
 
 on:
   push:
-    branches: [main, plot-to-ghar-production-ready]
+    branches: [main, plot-to-ghar-production-ready, plot-to-ghar-standalone-production]
     paths:
       - 'plot-to-ghar/web/**'
       - 'plot-to-ghar/android/**'
