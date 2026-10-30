@@ -1,10 +1,21 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { computeLedger } from '@/lib/ledger';
 import type { ProjectState, Transaction } from '@/lib/types';
 import { Card, money, PageTitle } from '@/components/ui';
 
-export function Home({ state, txs }: { state: ProjectState; txs: Transaction[] }) {
+export function Home({ state, txs, save, openSection }: { state: ProjectState; txs: Transaction[]; save: (next: ProjectState) => Promise<void>; openSection: (section: 'journey'|'build'|'add'|'ledger'|'more') => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(() => structuredClone(state));
+  const [error, setError] = useState('');
+  useEffect(() => { if (!editing) setDraft(structuredClone(state)); }, [state, editing]);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!Number.isFinite(draft.project.agreedPurchasePrice) || draft.project.agreedPurchasePrice < 0) { setError('Enter a valid agreement price.'); return; }
+    await save(draft);
+    setEditing(false); setError('');
+  }
   const summary = computeLedger(state.accounts, txs);
   const available = Object.values(summary.accountBalances).reduce((a, b) => a + b, 0);
   const committedFunding = state.fundingSources.reduce((a, f) => a + Number(f.committedAmount || 0), 0);
@@ -30,6 +41,29 @@ export function Home({ state, txs }: { state: ProjectState; txs: Transaction[] }
   return (
     <div className="stack">
       <PageTitle title="Project Dashboard" description="Plot purchase to completed building — one financial truth." />
+      <section className="panel">
+        <div className="sectionHead"><div><h2>Project controls</h2><p className="muted">Edit project facts and budgets; transaction-derived balances cannot be edited directly.</p></div>
+          <button className="secondary small" onClick={() => setEditing(!editing)}>{editing ? 'Cancel' : 'Edit project'}</button>
+        </div>
+        {editing ? <form className="form detailsBody" onSubmit={submit}>
+          <label>Project name<input required value={draft.project.name} onChange={e=>setDraft({...draft,project:{...draft.project,name:e.target.value}})}/></label>
+          <label>Project status<input value={draft.project.status} onChange={e=>setDraft({...draft,project:{...draft.project,status:e.target.value}})}/></label>
+          <label>Plot address<textarea value={draft.project.propertyAddress} onChange={e=>setDraft({...draft,project:{...draft.project,propertyAddress:e.target.value}})}/></label>
+          <div className="grid2">
+            <label>Agreed plot price ₹<input type="number" min="0" value={draft.project.agreedPurchasePrice} onChange={e=>setDraft({...draft,project:{...draft.project,agreedPurchasePrice:Number(e.target.value)}})}/></label>
+            <label>Plot area (gaj)<input type="number" min="0" step="any" value={draft.project.plotAreaSqYard} onChange={e=>setDraft({...draft,project:{...draft.project,plotAreaSqYard:Number(e.target.value)}})}/></label>
+            <label>Registry target<input type="date" value={draft.project.registryTargetDate || ''} onChange={e=>setDraft({...draft,project:{...draft.project,registryTargetDate:e.target.value}})}/></label>
+            <label>Registered owner<input value={draft.project.ownerName} onChange={e=>setDraft({...draft,project:{...draft.project,ownerName:e.target.value}})}/></label>
+          </div>
+          {error && <div className="error">{error}</div>}
+          <button className="primary" type="submit">Save project changes</button>
+        </form> : <div className="chips">
+          <button className="secondary small" onClick={()=>openSection('journey')}>Edit milestone & phase budgets</button>
+          <button className="secondary small" onClick={()=>openSection('build')}>Edit floor construction plan</button>
+          <button className="secondary small" onClick={()=>openSection('more')}>Edit accounts & funding</button>
+          <button className="secondary small" onClick={()=>openSection('add')}>Record money movement</button>
+        </div>}
+      </section>
 
       <section className="hero">
         <small>TOTAL RECOGNIZED PROJECT COST</small>
