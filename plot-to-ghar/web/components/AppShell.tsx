@@ -499,7 +499,7 @@ export function AppShell() {
     return (
       <main className="login">
         <section className="loginCard">
-          <div className="brandMark">🏠</div>
+          <img className="brandImage" src="/icon.svg" width={72} height={72} alt="Plot to Ghar" />
           <h1>Plot to Ghar</h1>
           <p>{mode === 'standalone' ? 'On-device property & construction ledger' : 'Private property & construction ledger'}</p>
           <form onSubmit={login}>
