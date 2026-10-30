@@ -7,7 +7,7 @@ import type { Transaction, TxType } from '@/lib/types';
 function reversalType(type: TxType): TxType {
   if (type === 'EXPENSE') return 'REFUND';
   if (type === 'TRANSFER') return 'TRANSFER';
-  if (type === 'ADVANCE') return 'ADVANCE_ADJUSTMENT';
+  if (type === 'ADVANCE') return 'ADVANCE_REFUND';
   throw new Error('This transaction cannot be auto-voided. Add a correcting entry instead.');
 }
 
@@ -36,7 +36,11 @@ export async function POST(req: Request) {
       amount: old.amount,
       sourceAccountId: type === 'TRANSFER' ? old.destinationAccountId : undefined,
       destinationAccountId:
-        type === 'TRANSFER' ? old.sourceAccountId : type === 'REFUND' ? old.sourceAccountId : undefined,
+        type === 'TRANSFER'
+          ? old.sourceAccountId
+          : type === 'REFUND' || type === 'ADVANCE_REFUND'
+            ? old.sourceAccountId
+            : undefined,
       fundingSourceId: old.fundingSourceId,
       milestoneId: old.milestoneId,
       phaseId: old.phaseId,
