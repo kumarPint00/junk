@@ -110,6 +110,7 @@ export type WorkTask = {
 export type ContractorAgreement = {
   id: string;
   contractorId: string;
+  parentAgreementId?: string;
   title: string;
   scope: string;
   value: number;
@@ -224,6 +225,7 @@ export type Transaction = {
   floorId?: string;
   vendorId?: string;
   contractorId?: string;
+  agreementId?: string;
   costBucket?: CostBucket;
   category?: string;
   payee?: string;
