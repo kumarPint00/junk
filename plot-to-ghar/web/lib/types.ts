@@ -8,7 +8,8 @@ export type TxType =
   | 'REFUND'
   | 'DIRECT_FUNDED_EXPENSE'
   | 'LOAN_REPAYMENT'
-  | 'REVERSAL';
+  | 'REVERSAL'
+  | 'BALANCE_ADJUSTMENT';
 
 export type CostBucket = 'ACQUISITION' | 'CONSTRUCTION' | 'OTHER';
 
