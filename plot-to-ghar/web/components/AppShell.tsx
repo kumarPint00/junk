@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { House, ClipboardList, Building2, Plus, Receipt, Menu, Bell, ShieldCheck, HardHat } from 'lucide-react';
 import type { AttachmentRef, ProjectState, Transaction, TxType } from '@/lib/types';
 import { defaultState, normalizeState, validateProjectState } from '@/lib/defaults';
 import { computeLedger, findPotentialDuplicate, validateTx } from '@/lib/ledger';
@@ -18,7 +19,8 @@ import { Journey } from '@/components/views/Journey';
 import { AddTransaction } from '@/components/views/AddTransaction';
 import { Ledger } from '@/components/views/Ledger';
 import { More } from '@/components/views/More';
-import { ConstructionHub } from '@/components/views/ConstructionHub';
+import { ConstructionHub, tabs as constructionTabs } from '@/components/views/ConstructionHub';
+import type { BuildTab } from '@/components/views/ConstructionHub';
 import { dueReminders } from '@/lib/construction-calcs';
 
 type Tab = 'home' | 'journey' | 'build' | 'add' | 'ledger' | 'more';
@@ -60,6 +62,12 @@ export function AppShell() {
   const [state, setState] = useState<ProjectState | null>(null);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [tab, setTab] = useState<Tab>('home');
+  const [buildTab, setBuildTab] = useState<BuildTab>('floors');
+  function goTo(section: Tab, feature?: string) {
+    if (section === 'build' && feature && constructionTabs.some(t => t.id === feature)) setBuildTab(feature as BuildTab);
+    setTab(section);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'auto' });
+  }
   const [scanDraft, setScanDraft] = useState<{ amount: string; date: string; payee: string; description: string; attachment?: AttachmentRef } | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
@@ -529,15 +537,18 @@ export function AppShell() {
 
   return (
     <div className="app">
-      <header>
+      <header className="appTopbar">
         <div className="brandIdentity">
-          <img src="/icon.svg" width={36} height={36} alt="" aria-hidden="true" />
-          <div><strong>{state.project.name}</strong>
-          <small>{state.project.status.replaceAll('_', ' ')}</small></div>
+          <img src="/icon.svg" width={40} height={40} alt="Plot to Ghar" />
+          <div><strong>Plot <span className="brandGreen">to Ghar</span></strong>
+          <small>{state.project.name}</small></div>
         </div>
-        <span className={online ? 'online' : 'offline'}>
-          {mode === 'standalone' ? '● On-device' : online ? '● Cloud' : '● Offline'}
-        </span>
+        <div className="topbarActions">
+          <span className={mode === 'standalone' ? 'deviceIndicator' : online ? 'cloudIndicator' : 'offlineIndicator'}>
+            <span className="indicatorDot" aria-hidden="true"/> {mode === 'standalone' ? 'On this device' : online ? 'Cloud connected' : 'Offline'}
+          </span>
+          <button type="button" className="headerReminder" aria-label="Open reminders" onClick={() => goTo('build', 'reminders')}><Bell size={19}/>{state.construction.reminders.some(r=>!r.completed) && <span aria-hidden="true" className="headerNotificationDot"/>}</button>
+        </div>
       </header>
 
       {backendError ? <div className="syncBanner">{backendError}</div> : null}
@@ -546,21 +557,32 @@ export function AppShell() {
       ) : null}
 
       <main className="content">
-        {tab === 'home' ? <Home state={state} txs={txs} save={saveState} openSection={setTab} /> : null}
+        {tab === 'home' ? <Home state={state} txs={txs} save={saveState} openSection={goTo} /> : null}
         {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
-        {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
+        {tab === 'build' ? <ConstructionHub initialTab={buildTab} state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); goTo('add'); }} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
         {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} /> : null}
         {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} /> : null}
       </main>
 
-      <nav>
-        {(['home', 'journey', 'build', 'add', 'ledger', 'more'] as Tab[]).map((x) => (
-          <button key={x} onClick={() => setTab(x)} className={tab === x ? 'active' : ''}>
-            <span>{x === 'home' ? '⌂' : x === 'journey' ? '◉' : x === 'build' ? '▦' : x === 'add' ? '+' : x === 'ledger' ? '☷' : '•••'}</span>
-            {x === 'add' ? 'Add' : x[0].toUpperCase() + x.slice(1)}
+      <nav className="appNav" aria-label="Primary navigation">
+        <div className="navDesktopBrand"><img src="/icon.svg" width={46} height={46} alt="" aria-hidden="true"/><div><b>Plot <span>to Ghar</span></b><small>Build your dream home.</small></div></div>
+        <div className="navSectionLabel">WORKSPACE</div>
+        {([
+          { id: 'home', label: 'Dashboard', Icon: House },
+          { id: 'journey', label: 'Journey', Icon: ClipboardList },
+          { id: 'build', label: 'Build', Icon: Building2 },
+          { id: 'add', label: 'Add', Icon: Plus },
+          { id: 'ledger', label: 'Ledger', Icon: Receipt },
+          { id: 'more', label: 'More', Icon: Menu },
+        ] as const).map(({id,label,Icon}) => (
+          <button key={id} type="button" aria-current={tab===id?'page':undefined} onClick={() => goTo(id)}
+            className={(tab===id?'active ':'')+(id==='add'?'addNav':'')}>
+            <span className="navIcon"><Icon size={22} strokeWidth={tab===id?2.5:1.95}/></span>
+            <span className="navLabel">{label}</span>
           </button>
         ))}
+        <div className="navDesktopFoot"><ShieldCheck size={18}/><span>Private financial workspace<br/><small>{mode==='standalone'?'Remember to back up your data':'Cloud sync enabled'}</small></span></div>
       </nav>
 
       {busy ? <div className="busy">Working…</div> : null}

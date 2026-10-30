@@ -1,4 +1,5 @@
 import './styles.css';
+import './light-theme.css';
 import type { Metadata, Viewport } from 'next';
 
 const title = 'Plot to Ghar | Property & Construction Manager';

@@ -98,7 +98,7 @@ export function defaultState(): ProjectState {
         { id: 'floor-first', name: 'First Floor · 4BHK', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
         { id: 'floor-terrace', name: 'Terrace / Roof', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
       ],
-      schedule: [], agreements: [], progress: [], stockItems: [], stockMovements: [], reminders: [],
+      schedule: [], agreements: [], progress: [], stockItems: [], stockMovements: [], reminders: [], documents: [],
     },
     updatedAt: new Date().toISOString(),
   };
@@ -144,6 +144,7 @@ export function normalizeState(input?: Partial<ProjectState> | null): ProjectSta
       stockItems: Array.isArray(input.construction?.stockItems) ? input.construction.stockItems : [],
       stockMovements: Array.isArray(input.construction?.stockMovements) ? input.construction.stockMovements : [],
       reminders: Array.isArray(input.construction?.reminders) ? input.construction.reminders : [],
+      documents: Array.isArray(input.construction?.documents) ? input.construction.documents : [],
     },
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
@@ -176,6 +177,10 @@ export function validateProjectState(state: ProjectState) {
   for (const a of state.construction.agreements) {
     if (!a.title.trim() || !a.scope.trim() || !Number.isFinite(a.value) || a.value < 0) throw new Error('Invalid contractor agreement.');
     if (!state.contractors.some((c) => c.id === a.contractorId)) throw new Error('Agreement contractor not found.');
+  }
+  for (const doc of state.construction.documents) {
+    if (!doc.id || !doc.title.trim() || !doc.date || !Number.isFinite(Date.parse(doc.date))) throw new Error('A document needs a title and valid date.');
+    if (!Array.isArray(doc.attachments) || doc.attachments.length === 0 || doc.attachments.length > 12) throw new Error('Attach 1–12 files per document.');
   }
   for (const item of state.construction.stockItems) {
     if (!item.name.trim() || !item.unit.trim() || !Number.isFinite(item.reorderLevel) || item.reorderLevel < 0) throw new Error('Invalid inventory item.');

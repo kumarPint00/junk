@@ -1,7 +1,7 @@
 {
   "name": "plot-to-ghar-web",
   "private": true,
-  "version": "2.4.0",
+  "version": "2.5.0",
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/build-brand-assets.mjs && next build",
@@ -18,7 +18,8 @@
     "@neondatabase/serverless": "1.2.0",
     "aws4fetch": "1.0.20",
     "tesseract.js": "^6.0.1",
-    "sharp": "^0.34.4"
+    "sharp": "^0.34.4",
+    "lucide-react": "^0.468.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

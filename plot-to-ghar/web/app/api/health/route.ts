@@ -34,7 +34,7 @@ export async function GET() {
       databaseConfigured,
       storageConfigured,
       app: 'plot-to-ghar',
-      version: '2.4.0',
+      version: '2.5.0',
     },
     { status: 200, headers: { 'Cache-Control': 'no-store' } }
   );

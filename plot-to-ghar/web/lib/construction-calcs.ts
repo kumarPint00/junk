@@ -81,3 +81,26 @@ export function dueReminders(reminders: ProjectReminder[], now: Date) {
     return date >= new Date(year, month - 1, day);
   });
 }
+
+
+/** Planning-only plaster quantity for a cement:sand 1:4 mix. Structural or site specifications prevail. */
+export function plasterEstimate(areaM2: number, thicknessMm: number, sandParts = 4) {
+  if (![areaM2, thicknessMm, sandParts].every(n => Number.isFinite(n) && n > 0)) {
+    return { areaM2: 0, wetM3: 0, cementBags: 0, sandM3: 0 };
+  }
+  const wetM3 = areaM2 * thicknessMm / 1000;
+  const dryM3 = wetM3 * 1.33; // Allowance for shrinkage and voids; excludes wastage
+  const cementM3 = dryM3 / (1 + sandParts);
+  return { areaM2, wetM3, cementBags: Math.ceil(cementM3 / 0.0347), sandM3: dryM3 * sandParts / (1 + sandParts) };
+}
+
+/** Tile purchase allowance; tile dimensions must include any chosen grout gap separately. */
+export function flooringEstimate(areaM2: number, tileLengthCm: number, tileWidthCm: number, wastePercent = 5) {
+  if (![areaM2, tileLengthCm, tileWidthCm, wastePercent].every(n => Number.isFinite(n))
+      || areaM2 <= 0 || tileLengthCm <= 0 || tileWidthCm <= 0 || wastePercent < 0 || wastePercent > 50) {
+    return { areaM2: 0, tileAreaM2: 0, tilesWithoutWaste: 0, tilesWithWaste: 0 };
+  }
+  const tileAreaM2 = tileLengthCm * tileWidthCm / 10000;
+  return { areaM2, tileAreaM2, tilesWithoutWaste: Math.ceil(areaM2 / tileAreaM2),
+    tilesWithWaste: Math.ceil(areaM2 * (1 + wastePercent / 100) / tileAreaM2) };
+}

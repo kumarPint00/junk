@@ -140,7 +140,7 @@ export type StockMovement = {
   id: string;
   date: string;
   itemId: string;
-  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN';
+  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN' | 'CORRECTION_OUT';
   quantity: number;
   floorId?: string;
   phaseId?: string;
@@ -157,6 +157,15 @@ export type ProjectReminder = {
   lastNotifiedDate?: string;
   notes?: string;
 };
+export type ConstructionDocument = {
+  id: string;
+  title: string;
+  category: 'REGISTRY' | 'PLAN' | 'PERMIT' | 'BILL' | 'AGREEMENT' | 'WARRANTY' | 'PHOTO' | 'OTHER';
+  date: string;
+  notes?: string;
+  attachments: AttachmentRef[];
+};
+
 export type ConstructionSuite = {
   floors: FloorPlan[];
   schedule: WorkTask[];
@@ -165,6 +174,7 @@ export type ConstructionSuite = {
   stockItems: StockItem[];
   stockMovements: StockMovement[];
   reminders: ProjectReminder[];
+  documents: ConstructionDocument[];
 };
 
 export type ProjectState = {

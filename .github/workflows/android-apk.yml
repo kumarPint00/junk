@@ -82,18 +82,18 @@ jobs:
         run: |
           set -euo pipefail
           test -f app/build/outputs/apk/release/app-release.apk
-          cp app/build/outputs/apk/release/app-release.apk ../../Plot-to-Ghar-2.4.0.apk
-          unzip -t ../../Plot-to-Ghar-2.4.0.apk >/dev/null
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose ../../Plot-to-Ghar-2.4.0.apk
-          sha256sum ../../Plot-to-Ghar-2.4.0.apk | tee ../../Plot-to-Ghar-2.4.0.sha256
+          cp app/build/outputs/apk/release/app-release.apk ../../Plot-to-Ghar-2.5.0.apk
+          unzip -t ../../Plot-to-Ghar-2.5.0.apk >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose ../../Plot-to-Ghar-2.5.0.apk
+          sha256sum ../../Plot-to-Ghar-2.5.0.apk | tee ../../Plot-to-Ghar-2.5.0.sha256
           printf 'signing_mode=%s\ncommit=%s\n' "$SIGNING_MODE" "$GITHUB_SHA" > ../../Plot-to-Ghar-build-info.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: plot-to-ghar-apk-${{ github.sha }}
           path: |
-            Plot-to-Ghar-2.4.0.apk
-            Plot-to-Ghar-2.4.0.sha256
+            Plot-to-Ghar-2.5.0.apk
+            Plot-to-Ghar-2.5.0.sha256
             Plot-to-Ghar-build-info.txt
           retention-days: 30
           if-no-files-found: error
