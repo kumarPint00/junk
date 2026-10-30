@@ -545,7 +545,7 @@ export function AppShell() {
       ) : null}
 
       <main className="content">
-        {tab === 'home' ? <Home state={state} txs={txs} /> : null}
+        {tab === 'home' ? <Home state={state} txs={txs} save={saveState} openSection={setTab} /> : null}
         {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
         {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
