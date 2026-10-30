@@ -18,34 +18,35 @@ jobs:
       - name: Wait for production and verify backend health
         shell: bash
         run: |
-          set -euo pipefail
+          set -u
           URL="https://plot-to-ghar.vercel.app/api/health"
+          ready=0
           for attempt in $(seq 1 36); do
             echo "Health attempt $attempt"
             if body="$(curl --silent --show-error --fail --max-time 15 "$URL" 2>/tmp/curl.err)"; then
               echo "$body"
-              BODY="$body" node --input-type=module <<'NODE'
+              if BODY="$body" node --input-type=module <<'NODE'
           const body = JSON.parse(process.env.BODY);
           if (body.version !== '2.0.0') process.exit(2);
           if (body.ok !== true || body.database !== true) process.exit(3);
           if (body.storageConfigured !== true) process.exit(4);
           NODE
-              code=$?
-              if [ "$code" -eq 0 ]; then
+              then
                 echo "Production backend health is ready."
+                ready=1
                 break
+              else
+                echo "Production has not reached the expected v2 health state yet."
               fi
-              echo "Production has not reached the expected v2 health state yet (code $code)."
             else
               cat /tmp/curl.err || true
             fi
-
-            if [ "$attempt" -eq 36 ]; then
-              echo "Production health did not become ready." >&2
-              exit 1
-            fi
             sleep 10
           done
+          if [ "$ready" -ne 1 ]; then
+            echo "Production health did not become ready." >&2
+            exit 1
+          fi
 
       - name: Verify production shell and security headers
         shell: bash
