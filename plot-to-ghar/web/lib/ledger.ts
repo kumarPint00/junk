@@ -79,16 +79,6 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   for (const t of txs) {
     if (seen.has(t.id)) { integrityWarnings.push('Duplicate transaction ID: ' + t.id); continue; }
     seen.add(t.id);
-    if (t.type === 'LOAN_REPAYMENT') {
-    const splits = [t.loanPrincipalAmount, t.loanInterestAmount, t.loanFeeAmount];
-    if (splits.some((x) => x !== undefined)) {
-      if (splits.some((x) => x !== undefined && (!Number.isFinite(x) || x < 0))) throw new Error('Loan split amounts must be non-negative.');
-      if (splits.reduce<number>((total, x) => total + paise(x || 0), 0) !== paise(n)) {
-        throw new Error('Loan principal + interest + fees must equal the repayment.');
-      }
-    }
-    if (t.loanFacilityId) checkId(state?.loans, t.loanFacilityId, 'Loan facility');
-  }
   if (t.type === 'REVERSAL') {
       const original = lookup.get(t.reversalOf || '');
       if (original && original.type !== 'REVERSAL') apply(original, -1);
