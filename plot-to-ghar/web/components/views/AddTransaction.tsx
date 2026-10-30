@@ -44,6 +44,10 @@ export function AddTransaction({
   const [type, setType] = useState<TxType>('EXPENSE');
   const [adjustmentDirection, setAdjustmentDirection] = useState<'IN' | 'OUT'>('IN');
   const [amount, setAmount] = useState(prefill?.amount || '');
+  const [loanFacilityId, setLoanFacilityId] = useState(state.loans[0]?.id || '');
+  const [loanPrincipal, setLoanPrincipal] = useState('');
+  const [loanInterest, setLoanInterest] = useState('');
+  const [loanFees, setLoanFees] = useState('');
   const [source, setSource] = useState('');
   const [dest, setDest] = useState('');
   const [funding, setFunding] = useState('');
@@ -172,6 +176,10 @@ export function AddTransaction({
       lineItems: items.length ? items : undefined,
       attachments,
       linkedTransactionId: linkedTransactionId || undefined,
+      loanFacilityId: type === 'LOAN_REPAYMENT' ? loanFacilityId || undefined : undefined,
+      loanPrincipalAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanPrincipal || 0) : undefined,
+      loanInterestAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanInterest || 0) : undefined,
+      loanFeeAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanFees || 0) : undefined,
     };
     await onSave(tx);
   }
@@ -281,6 +289,28 @@ export function AddTransaction({
           </label>
         ) : null}
 
+        {type === 'LOAN_REPAYMENT' ? (
+          <section className="suiteRecord">
+            <b>EMI / loan payment breakdown</b>
+            <p className="muted">Only principal reduces loan debt. Interest and lender fees are financing outflows, not new construction expenditure.</p>
+            <label>Loan facility
+              <select value={loanFacilityId} onChange={(e) => setLoanFacilityId(e.target.value)}>
+                <option value="">Unspecified loan</option>
+                {state.loans.map((loan) => <option value={loan.id} key={loan.id}>{loan.lenderName}</option>)}
+              </select>
+            </label>
+            <div className="grid3">
+              <label>Principal ₹<input type="number" min="0" step="0.01" value={loanPrincipal} onChange={(e) => setLoanPrincipal(e.target.value)} placeholder="From lender statement" /></label>
+              <label>Interest ₹<input type="number" min="0" step="0.01" value={loanInterest} onChange={(e) => setLoanInterest(e.target.value)} placeholder="From lender statement" /></label>
+              <label>Fees ₹<input type="number" min="0" step="0.01" value={loanFees} onChange={(e) => setLoanFees(e.target.value)} placeholder="0" /></label>
+            </div>
+            {[loanPrincipal, loanInterest, loanFees].some(Boolean) && <div className="row">
+              <span>Allocated vs total repayment</span>
+              <b>{money(Number(loanPrincipal || 0) + Number(loanInterest || 0) + Number(loanFees || 0))} / {money(finalAmount)}</b>
+            </div>}
+            <small className="muted">If your lender statement does not show the split, leave all three blank. The EMI remains recorded but is flagged as unallocated until corrected.</small>
+          </section>
+        ) : null}
         {settlesAdvance ? (
           <label>
             Advance to settle
@@ -366,7 +396,7 @@ export function AddTransaction({
             <b>Itemized materials</b>
             <small>Optional. Quantity × rate automatically becomes the transaction total.</small>
           </div>
-          <button type="button" className="secondary small" disabled={type === "BALANCE_ADJUSTMENT"} onClick={addItem}>+ Item</button>
+          <button type="button" className="secondary small" disabled={type === "BALANCE_ADJUSTMENT" || type === "LOAN_REPAYMENT" || type === "TRANSFER"} onClick={addItem}>+ Item</button>
         </div>
 
         {items.map((item, i) => (
