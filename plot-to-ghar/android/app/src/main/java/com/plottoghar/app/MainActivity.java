@@ -45,7 +45,7 @@ public class MainActivity extends Activity {
         s.setGeolocationEnabled(false);
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setSafeBrowsingEnabled(true);
-        s.setUserAgentString(s.getUserAgentString() + " PlotToGharAndroid/2.4.0");
+        s.setUserAgentString(s.getUserAgentString() + " PlotToGharAndroid/2.5.0");
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
