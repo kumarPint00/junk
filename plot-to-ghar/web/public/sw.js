@@ -1,4 +1,4 @@
-const CACHE = 'plot-to-ghar-shell-v2';
+const CACHE = 'plot-to-ghar-shell-v3';
 const SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
