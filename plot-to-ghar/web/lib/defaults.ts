@@ -195,8 +195,17 @@ export function validateProjectState(state: ProjectState) {
   for (const item of state.construction.stockItems) {
     if (!item.name.trim() || !item.unit.trim() || !Number.isFinite(item.reorderLevel) || item.reorderLevel < 0) throw new Error('Invalid inventory item.');
   }
+  const progressIds = new Set(state.construction.progress.map((p)=>p.id));
+  for (const entry of state.construction.progress) {
+    if (entry.supersedesId && (!progressIds.has(entry.supersedesId) || entry.supersedesId === entry.id)) {
+      throw new Error('Progress correction must refer to another existing entry.');
+    }
+    if (!Number.isFinite(entry.progressPercent) || entry.progressPercent < 0 || entry.progressPercent > 100) throw new Error('Invalid progress percentage.');
+  }
   for (const entry of state.construction.stockMovements) {
     if (!state.construction.stockItems.some((s) => s.id === entry.itemId) || !Number.isFinite(entry.quantity) || entry.quantity <= 0) throw new Error('Invalid inventory movement.');
+    if (!['RECEIPT','CONSUMPTION','WASTAGE','RETURN','CORRECTION_IN','CORRECTION_OUT'].includes(entry.type)) throw new Error('Unknown stock movement.');
+    if (entry.type.startsWith('CORRECTION_') && (!entry.notes || entry.notes.trim().length < 8)) throw new Error('Stock corrections require a reason.');
   }
   for (const p of state.phases) {
     if (!p.id || !p.name?.trim()) throw new Error('Invalid construction phase.');
@@ -228,6 +237,45 @@ export function validateStateTransition(previous: ProjectState, next: ProjectSta
       throw new Error('Cannot change an already-used funding source type.');
     }
   }
+  // These documents are event history. Existing entries cannot be silently
+  // overwritten through a general project-state PUT or device save.
+  const unchanged = <T extends { id: string }>(before: T[], after: T[], label: string) => {
+    for (const original of before) {
+      const current = after.find((x)=>x.id===original.id);
+      if (!current || JSON.stringify(original)!==JSON.stringify(current)) {
+        throw new Error(label+' history cannot be edited or deleted. Append a correcting entry instead.');
+      }
+    }
+  };
+  unchanged(previous.construction.stockMovements, next.construction.stockMovements, 'Stock');
+  unchanged(previous.construction.progress, next.construction.progress, 'Progress');
+  unchanged(previous.cashReconciliations, next.cashReconciliations, 'Cash-count');
+
+  const agreementIdsInLedger = new Set(transactions.map((t)=>t.agreementId).filter(Boolean));
+  for (const before of previous.construction.agreements) {
+    const after = next.construction.agreements.find((a)=>a.id===before.id);
+    if (!after && (before.status!=='DRAFT' || agreementIdsInLedger.has(before.id))) {
+      throw new Error('Signed or ledger-linked contractor agreements cannot be deleted.');
+    }
+    if (!after) continue;
+    if (agreementIdsInLedger.has(before.id) && before.contractorId!==after.contractorId) throw new Error('Cannot change the contractor of an agreement with payments.');
+    if (before.status==='CLOSED' && after.status!=='CLOSED') throw new Error('Closed agreements cannot be reopened.');
+    if (before.status==='SIGNED' && after.status==='DRAFT') throw new Error('Signed agreements cannot revert to draft.');
+    if (before.status==='SIGNED' || before.status==='CLOSED') {
+      const legalTerms = (x: typeof before) => [x.contractorId,x.title,x.scope,x.value,x.advanceLimit,x.startDate,x.endDate,x.paymentTerms,x.retentionPercent,x.parentAgreementId];
+      if (JSON.stringify(legalTerms(before)) !== JSON.stringify(legalTerms(after))) {
+        throw new Error('Signed contractor terms cannot be edited. Create a draft amendment.');
+      }
+    }
+  }
+  for (const item of previous.construction.stockItems) {
+    const updated = next.construction.stockItems.find((x)=>x.id===item.id);
+    if (previous.construction.stockMovements.some((m)=>m.itemId===item.id)) {
+      if (!updated) throw new Error('Cannot delete material with stock history.');
+      if (updated.unit!==item.unit) throw new Error('Material unit is locked after stock movements exist.');
+    }
+  }
+
   const knownPhases = new Set(next.phases.map((p) => p.id));
   const knownFloors = new Set(next.construction.floors.map((f) => f.id));
   for (const t of transactions) {
