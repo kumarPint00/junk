@@ -1,0 +1,25 @@
+name: Plot to Ghar Production Health Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-health-diagnostic.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Read production health
+        shell: bash
+        run: |
+          set +e
+          echo "=== health status/body ==="
+          curl --silent --show-error --max-time 20 -w "\nHTTP_STATUS=%{http_code}\n" https://plot-to-ghar.vercel.app/api/health
+          echo "=== root headers ==="
+          curl --silent --show-error --max-time 20 -I https://plot-to-ghar.vercel.app/ | sed -n '1,30p'
+          exit 0
