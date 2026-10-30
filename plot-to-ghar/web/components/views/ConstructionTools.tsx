@@ -247,6 +247,7 @@ export function FinanceView({state,txs}:ChildProps){
     projectedCash+=inflow-planned-emiOutflow;
     return {key,planned,inflow,emiOutflow,balance:projectedCash};
   });
+  const cashFlowMax = Math.max(1, ...forecast.flatMap(x => [x.inflow, x.planned + x.emiOutflow]));
   return <div className="stack">
     <section className="panel">
       <h2>Loan repayment scenario</h2>
@@ -275,7 +276,20 @@ export function FinanceView({state,txs}:ChildProps){
       <label>Monthly EMI cash outflow ₹<input type="number" min="0" value={monthlyEmi} onChange={(e)=>setMonthlyEmi(e.target.value)}/></label>
       <label>Extra funding in month 6 ₹<input type="number" min="0" value={semiannual} onChange={(e)=>setSemiannual(e.target.value)}/></label>
       </div>
-      {forecast.map((x)=><div className="suiteRecord" key={x.key}>
+      <div className="cashForecastGraph" role="img" aria-label="Projected funding inflows and planned work plus EMI outflows by month">
+        <div className="cashGraphColumns">
+          {forecast.map(x => <div className="cashGraphColumn" key={x.key}>
+            <div className="cashGraphBars">
+              <div className="cashGraphIn" style={{height:Math.max(2,x.inflow/cashFlowMax*100)+'%'}} title={'Expected contribution '+money(x.inflow)} />
+              <div className="cashGraphOut" style={{height:Math.max(2,(x.planned+x.emiOutflow)/cashFlowMax*100)+'%'}} title={'Planned work and EMI '+money(x.planned+x.emiOutflow)} />
+            </div>
+            <small>{x.key.slice(5)}</small>
+            <span className={x.balance<0?'negativeStock':''}>{x.balance<0?'Shortfall':'Cash '+money(x.balance)}</span>
+          </div>)}
+        </div>
+        <div className="chartLegend"><span><i className="legendFunding" /> Expected inflow</span><span><i className="legendSpending" /> Planned outflow</span></div>
+      </div>
+      {forecast.map((x)=><div className="suiteRecord forecastRecord" key={x.key}>
         <b>{x.key}</b><div className="row"><small>Planned work</small><b>{money(x.planned)}</b></div>
         <div className="row"><small>Expected contribution</small><b>{money(x.inflow)}</b></div>
         <div className="row"><small>EMI outflow</small><b>{money(x.emiOutflow)}</b></div>
