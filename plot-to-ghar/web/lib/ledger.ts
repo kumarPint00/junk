@@ -24,6 +24,7 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   for (const a of accounts) balances[a.id] = paise(Number(a.openingBalance || 0));
   let projectCost = 0, acquisitionCost = 0, constructionCost = 0, otherCost = 0;
   let fundingReceived = 0, advancesOutstanding = 0, loanRepayments = 0;
+  let loanPrincipalPaid = 0, loanInterestPaid = 0, loanFeesPaid = 0, unallocatedLoanRepayments = 0;
   const phaseSpend: Record<string, number> = {}, categorySpend: Record<string, number> = {}, monthlySpend: Record<string, number> = {};
   const receivedBySource: Record<string, number> = {}, advanceById: Record<string, number> = {};
   const integrityWarnings: string[] = [];
@@ -44,7 +45,17 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
       case 'ADVANCE_ADJUSTMENT': advancesOutstanding -= n; accumulate(advanceById, t.linkedTransactionId, -n); break;
       case 'ADVANCE_REFUND': credit(); advancesOutstanding -= n; accumulate(advanceById, t.linkedTransactionId, -n); break;
       case 'REFUND': credit(); break;
-      case 'LOAN_REPAYMENT': debit(); loanRepayments += n; break;
+      case 'LOAN_REPAYMENT':
+        debit();
+        loanRepayments += n;
+        if (t.loanPrincipalAmount === undefined && t.loanInterestAmount === undefined && t.loanFeeAmount === undefined) {
+          unallocatedLoanRepayments += n;
+        } else {
+          loanPrincipalPaid += paise(t.loanPrincipalAmount || 0) * sign;
+          loanInterestPaid += paise(t.loanInterestAmount || 0) * sign;
+          loanFeesPaid += paise(t.loanFeeAmount || 0) * sign;
+        }
+        break;
       case 'BALANCE_ADJUSTMENT': debit(); credit(); break;
       case 'REVERSAL': return;
     }
@@ -64,7 +75,17 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   for (const t of txs) {
     if (seen.has(t.id)) { integrityWarnings.push('Duplicate transaction ID: ' + t.id); continue; }
     seen.add(t.id);
-    if (t.type === 'REVERSAL') {
+    if (t.type === 'LOAN_REPAYMENT') {
+    const splits = [t.loanPrincipalAmount, t.loanInterestAmount, t.loanFeeAmount];
+    if (splits.some((x) => x !== undefined)) {
+      if (splits.some((x) => x !== undefined && (!Number.isFinite(x) || x < 0))) throw new Error('Loan split amounts must be non-negative.');
+      if (splits.reduce<number>((total, x) => total + paise(x || 0), 0) !== paise(n)) {
+        throw new Error('Loan principal + interest + fees must equal the repayment.');
+      }
+    }
+    if (t.loanFacilityId) checkId(state?.loans, t.loanFacilityId, 'Loan facility');
+  }
+  if (t.type === 'REVERSAL') {
       const original = lookup.get(t.reversalOf || '');
       if (original && original.type !== 'REVERSAL') apply(original, -1);
       else integrityWarnings.push('Reversal has missing original: ' + t.id);
@@ -74,6 +95,9 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
         integrityWarnings.push('Refund without linked expense: ' + t.id);
       }
     }
+  }
+  if (unallocatedLoanRepayments > 0) {
+    integrityWarnings.push('Loan repayments without principal/interest breakdown: ' + rupees(unallocatedLoanRepayments).toFixed(2) + ' rupees');
   }
   for (const [id, amount] of Object.entries(advanceById)) {
     if (amount < -1) integrityWarnings.push('Over-settled contractor advance: ' + id);
@@ -95,6 +119,10 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
     fundingReceived: rupees(fundingReceived),
     advancesOutstanding: rupees(advancesOutstanding),
     loanRepayments: rupees(loanRepayments),
+    loanPrincipalPaid: rupees(loanPrincipalPaid),
+    loanInterestPaid: rupees(loanInterestPaid),
+    loanFeesPaid: rupees(loanFeesPaid),
+    unallocatedLoanRepayments: rupees(unallocatedLoanRepayments),
     accountBalances: convert(balances),
     phaseSpend: convert(phaseSpend),
     categorySpend: convert(categorySpend),
