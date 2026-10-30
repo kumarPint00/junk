@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { computeLedger } from '@/lib/ledger';
+import { buildStandaloneBackup, restoreStandaloneBackup } from '@/lib/local-db';
 import type { Entity, ProjectState, Transaction } from '@/lib/types';
 import { money, PageTitle } from '@/components/ui';
 
@@ -10,11 +11,15 @@ export function More({
   txs,
   save,
   reload,
+  mode,
+  onLock,
 }: {
   state: ProjectState;
   txs: Transaction[];
   save: (state: ProjectState) => Promise<void>;
   reload: () => Promise<void>;
+  mode: 'cloud' | 'standalone';
+  onLock: () => Promise<void>;
 }) {
   const [draft, setDraft] = useState<ProjectState>(() => structuredClone(state));
   const [restore, setRestore] = useState<File | null>(null);
@@ -59,10 +64,36 @@ export function More({
     setCountedCash('');
   }
 
+  async function downloadBackup() {
+    if (mode === 'standalone') {
+      const backup = await buildStandaloneBackup(state, txs);
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `plot-to-ghar-full-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    window.location.href = '/api/backup';
+  }
+
   async function doRestore() {
     if (!restore) return;
-    if (!window.confirm('Restore will replace cloud project configuration and ledger. A server restore point is created first. Continue?')) return;
+    const message = mode === 'standalone'
+      ? 'Restore will replace this device\'s project configuration, ledger and local evidence. Continue?'
+      : 'Restore will replace cloud project configuration and ledger. A server restore point is created first. Continue?';
+    if (!window.confirm(message)) return;
+
     const backup = JSON.parse(await restore.text());
+    if (mode === 'standalone') {
+      await restoreStandaloneBackup(backup);
+      setRestore(null);
+      await reload();
+      return;
+    }
+
     const response = await fetch('/api/restore', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-confirm-restore': 'RESTORE' },
@@ -192,8 +223,14 @@ export function More({
 
       <section className="panel">
         <h2>Backup & recovery</h2>
-        <p className="muted">A restore automatically creates a server-side restore point before replacing data.</p>
-        <a className="button secondary" href="/api/backup">Download full JSON backup</a>
+        <p className="muted">
+          {mode === 'standalone'
+            ? 'Full backup includes project data, ledger and locally stored evidence files.'
+            : 'A restore automatically creates a server-side restore point before replacing cloud data.'}
+        </p>
+        <button className="secondary" type="button" onClick={() => downloadBackup().catch((e) => alert(e instanceof Error ? e.message : 'Backup failed'))}>
+          Download full JSON backup
+        </button>
         <div className="restore">
           <input type="file" accept="application/json" onChange={(e) => setRestore(e.target.files?.[0] || null)} />
           <button className="danger" disabled={!restore} onClick={doRestore}>Restore backup</button>
@@ -202,10 +239,11 @@ export function More({
 
       <section className="panel">
         <h2>System status</h2>
-        <div className="row"><span>Database</span><b>{health?.database ? 'Ready' : 'Unavailable'}</b></div>
-        <div className="row"><span>Evidence storage</span><b>{health?.storageConfigured ? 'Configured' : 'Not configured'}</b></div>
-        <div className="row"><span>App version</span><b>{health?.version || '—'}</b></div>
-        <button className="secondary" onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.reload(); }}>Lock app</button>
+        <div className="row"><span>Runtime mode</span><b>{mode === 'standalone' ? 'On-device / zero-cost' : 'Cloud sync'}</b></div>
+        <div className="row"><span>Database</span><b>{mode === 'standalone' ? 'IndexedDB ready' : health?.database ? 'Cloud ready' : 'Unavailable'}</b></div>
+        <div className="row"><span>Evidence storage</span><b>{mode === 'standalone' ? 'On-device ready' : health?.storageConfigured ? 'Cloud ready' : 'Not configured'}</b></div>
+        <div className="row"><span>App version</span><b>{health?.version || '2.2.0'}</b></div>
+        <button className="secondary" onClick={() => onLock()}>Lock app</button>
       </section>
     </div>
   );
