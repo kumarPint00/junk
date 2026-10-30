@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { computeLedger } from '@/lib/ledger';
+import { auditIntegrity } from '@/lib/integrity-audit';
 import type { ProjectState, Transaction } from '@/lib/types';
 import { Card, money, PageTitle } from '@/components/ui';
 
@@ -17,6 +18,7 @@ export function Home({ state, txs, save, openSection }: { state: ProjectState; t
     setEditing(false); setError('');
   }
   const summary = computeLedger(state.accounts, txs);
+  const issues = auditIntegrity(state, txs);
   const available = Object.values(summary.accountBalances).reduce((a, b) => a + b, 0);
   const committedFunding = state.fundingSources.reduce((a, f) => a + Number(f.committedAmount || 0), 0);
   const phaseBudget = state.phases.filter(p => p.name !== 'Plot Purchase').reduce((a, p) => a + Number(p.budgetAmount || 0), 0);
@@ -75,6 +77,13 @@ export function Home({ state, txs, save, openSection }: { state: ProjectState; t
         </div>
       </section>
 
+      <section className="panel">
+        <div className="sectionHead"><h2>Financial integrity audit</h2><b>{issues.filter(x=>x.severity==='CRITICAL').length} critical · {issues.filter(x=>x.severity==='WARNING').length} warnings</b></div>
+        <p className="muted">Historical entries are never silently rewritten. Resolve problems using linked corrections and reconcile physical balances.</p>
+        {issues.length === 0 ? <div className="row"><span>No detected ledger issues</span><b>✓</b></div> : issues.slice(0,10).map((issue,i)=><div className="row" key={issue.code+i}><div><b>{issue.severity}: {issue.code.replaceAll('_',' ')}</b><small>{issue.message}</small></div></div>)}
+        {issues.length > 10 ? <p className="muted">{issues.length-10} additional issues; download backup and review transaction history.</p> : null}
+        <button className="secondary small" onClick={()=>openSection('ledger')}>Review ledger</button>
+      </section>
       {negativeAccounts.length ? (
         <div className="warning">
           <b>Reconciliation required:</b>{' '}
