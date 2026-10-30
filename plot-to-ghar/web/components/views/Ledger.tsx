@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ProjectState, Transaction, TxType } from '@/lib/types';
+import { openLocalAttachment } from '@/lib/local-db';
 import { money, PageTitle } from '@/components/ui';
 
 function csvCell(value: unknown) {
@@ -14,10 +15,12 @@ export function Ledger({
   state,
   txs,
   onVoid,
+  mode,
 }: {
   state: ProjectState;
   txs: Transaction[];
   onVoid: (id: string) => Promise<void>;
+  mode: 'cloud' | 'standalone';
 }) {
   const [q, setQ] = useState('');
   const [type, setType] = useState<'ALL' | TxType>('ALL');
@@ -63,6 +66,14 @@ export function Ledger({
     URL.revokeObjectURL(url);
   }
 
+  async function openEvidence(pathname: string) {
+    if (pathname.startsWith('local://')) {
+      await openLocalAttachment(pathname);
+      return;
+    }
+    window.open(`/api/attachments?path=${encodeURIComponent(pathname)}`, '_blank', 'noopener,noreferrer');
+  }
+
   return (
     <div className="stack">
       <PageTitle title="Ledger" description="Append-only project money trail with evidence and safe reversals." />
@@ -76,7 +87,8 @@ export function Ledger({
           <option value="FUNDING_IN">Funding</option>
           <option value="ADVANCE">Advances</option>
           <option value="ADVANCE_ADJUSTMENT">Advance adjustments</option>
-          <option value="REFUND">Refunds</option>
+          <option value="ADVANCE_REFUND">Advance returns</option>
+          <option value="REFUND">Expense refunds</option>
           <option value="DIRECT_FUNDED_EXPENSE">Direct funded</option>
           <option value="LOAN_REPAYMENT">Loan repayments</option>
         </select>
@@ -122,9 +134,14 @@ export function Ledger({
                 {t.attachments?.length ? (
                   <div className="chips">
                     {t.attachments.map((a) => (
-                      <a key={a.pathname} href={`/api/attachments?path=${encodeURIComponent(a.pathname)}`} target="_blank">
+                      <button
+                        key={a.pathname}
+                        type="button"
+                        className="linkButton"
+                        onClick={() => openEvidence(a.pathname).catch((e) => alert(e instanceof Error ? e.message : 'Unable to open evidence'))}
+                      >
                         {a.name}
-                      </a>
+                      </button>
                     ))}
                   </div>
                 ) : null}
@@ -138,6 +155,8 @@ export function Ledger({
           );
         })}
       </section>
+
+      {mode === 'standalone' ? <small className="muted">Evidence marked local is stored in this device's app data and included in full JSON backups.</small> : null}
     </div>
   );
 }
