@@ -20,8 +20,10 @@ public final class ReminderBootReceiver extends BroadcastReceiver {
                 if (r == null || r.optBoolean("completed", false)) continue;
                 String id = r.optString("id"), title = r.optString("title"), date = r.optString("dueDate");
                 if (id.isEmpty() || title.isEmpty() || date.isEmpty()) continue;
+                boolean monthly = "MONTHLY".equals(r.optString("repeat"));
+                boolean completedThisMonth = monthly && java.time.YearMonth.now().toString().equals(r.optString("lastCompletedMonth"));
                 NativeReminderBridge.scheduleOne(context, id, title, r.optString("category", "WORK"),
-                        LocalDate.parse(date), "MONTHLY".equals(r.optString("repeat")), false);
+                        LocalDate.parse(date), monthly, completedThisMonth);
             }
         } catch (Exception ignored) { }
     }
