@@ -25,7 +25,8 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   let projectCost = 0, acquisitionCost = 0, constructionCost = 0, otherCost = 0;
   let fundingReceived = 0, advancesOutstanding = 0, loanRepayments = 0;
   let loanPrincipalPaid = 0, loanInterestPaid = 0, loanFeesPaid = 0, unallocatedLoanRepayments = 0;
-  const phaseSpend: Record<string, number> = {}, categorySpend: Record<string, number> = {}, monthlySpend: Record<string, number> = {};
+  const phaseSpend: Record<string, number> = {}, floorSpend: Record<string, number> = {}, categorySpend: Record<string, number> = {}, monthlySpend: Record<string, number> = {};
+  let unallocatedConstructionCost = 0;
   const receivedBySource: Record<string, number> = {}, advanceById: Record<string, number> = {};
   const integrityWarnings: string[] = [];
   const lookup = new Map(txs.map((t) => [t.id, t]));
@@ -68,6 +69,9 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
     else otherCost += delta;
     const linked = t.type === 'REFUND' ? lookup.get(t.linkedTransactionId || '') : null;
     accumulate(phaseSpend, linked?.phaseId || t.phaseId, delta);
+    const floorId = linked?.floorId || t.floorId;
+    if (bucket === 'CONSTRUCTION' && !floorId) unallocatedConstructionCost += delta;
+    accumulate(floorSpend, floorId, delta);
     accumulate(categorySpend, linked?.category || t.category || 'Uncategorized', delta);
     accumulate(monthlySpend, String(t.transactionDate || '').slice(0, 7) || 'Unknown', delta);
   };
@@ -95,6 +99,9 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
         integrityWarnings.push('Refund without linked expense: ' + t.id);
       }
     }
+  }
+  if (unallocatedConstructionCost > 0) {
+    integrityWarnings.push('Construction expenses not assigned to a floor: ' + rupees(unallocatedConstructionCost).toFixed(2) + ' rupees');
   }
   if (unallocatedLoanRepayments > 0) {
     integrityWarnings.push('Loan repayments without principal/interest breakdown: ' + rupees(unallocatedLoanRepayments).toFixed(2) + ' rupees');
@@ -125,6 +132,8 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
     unallocatedLoanRepayments: rupees(unallocatedLoanRepayments),
     accountBalances: convert(balances),
     phaseSpend: convert(phaseSpend),
+    floorSpend: convert(floorSpend),
+    unallocatedConstructionCost: rupees(unallocatedConstructionCost),
     categorySpend: convert(categorySpend),
     monthlySpend: convert(monthlySpend),
     txCount: txs.length,
@@ -182,6 +191,7 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
   checkId(state?.fundingSources, t.fundingSourceId, 'Funding source');
   checkId(state?.milestones, t.milestoneId, 'Milestone');
   checkId(state?.phases, t.phaseId, 'Construction phase');
+  checkId(state?.construction.floors, t.floorId, 'Floor / zone');
   checkId(state?.vendors, t.vendorId, 'Vendor');
   checkId(state?.contractors, t.contractorId, 'Contractor');
 
@@ -222,6 +232,7 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
     if (paise(n) > available) throw new Error('Refund exceeds the original expense balance.');
     if (original.costBucket && t.costBucket !== original.costBucket) throw new Error('Refund cost bucket must match the original expense.');
     if (t.phaseId && original.phaseId && t.phaseId !== original.phaseId) throw new Error('Refund must use the original phase.');
+    if (t.floorId && original.floorId && t.floorId !== original.floorId) throw new Error('Refund must use the original floor.');
   }
   if (t.type === 'REFUND' && t.reversalOf) {
     // Backward-compatible historic reversals: previous versions used REFUND as
