@@ -4,7 +4,7 @@ import type { Account, CostBucket, LedgerSummary, ProjectState, Transaction, TxT
 const paise = (n: number) => Math.round(Number(n) * 100);
 const rupees = (n: number) => n / 100;
 const isMoney = (n: number) => Number.isFinite(n) && n > 0 && n <= 1_000_000_000 && Math.abs(n * 100 - Math.round(n * 100)) < 0.00001;
-const types: TxType[] = ['FUNDING_IN', 'TRANSFER', 'EXPENSE', 'ADVANCE', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND', 'REFUND', 'DIRECT_FUNDED_EXPENSE', 'LOAN_REPAYMENT', 'REVERSAL'];
+const types: TxType[] = ['FUNDING_IN', 'TRANSFER', 'EXPENSE', 'ADVANCE', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND', 'REFUND', 'DIRECT_FUNDED_EXPENSE', 'LOAN_REPAYMENT', 'REVERSAL', 'BALANCE_ADJUSTMENT'];
 
 function accumulate(map: Record<string, number>, key: string | undefined, value: number) {
   if (key) map[key] = (map[key] || 0) + value;
@@ -45,6 +45,7 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
       case 'ADVANCE_REFUND': credit(); advancesOutstanding -= n; accumulate(advanceById, t.linkedTransactionId, -n); break;
       case 'REFUND': credit(); break;
       case 'LOAN_REPAYMENT': debit(); loanRepayments += n; break;
+      case 'BALANCE_ADJUSTMENT': debit(); credit(); break;
       case 'REVERSAL': return;
     }
     const delta = costDelta(t, sign);
@@ -76,6 +77,11 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   }
   for (const [id, amount] of Object.entries(advanceById)) {
     if (amount < -1) integrityWarnings.push('Over-settled contractor advance: ' + id);
+  }
+  for (const t of txs) {
+    if (t.type === 'BALANCE_ADJUSTMENT' && !reversed.has(t.id)) {
+      integrityWarnings.push('Audited balance correction exists: ' + t.id);
+    }
   }
   for (const a of accounts) {
     if ((balances[a.id] || 0) < -1) integrityWarnings.push('Negative account balance: ' + a.name);
@@ -135,6 +141,10 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
   if (sources.includes(t.type) && !t.sourceAccountId) throw new Error('Source account is required.');
   if (dests.includes(t.type) && !t.destinationAccountId) throw new Error('Destination account is required.');
   if (t.type === 'TRANSFER' && t.sourceAccountId === t.destinationAccountId) throw new Error('Transfer needs two different accounts.');
+  if (t.type === 'BALANCE_ADJUSTMENT') {
+    if (Boolean(t.sourceAccountId) === Boolean(t.destinationAccountId)) throw new Error('Choose exactly one account direction for balance correction.');
+    if (!t.description?.trim() || t.description.trim().length < 8) throw new Error('Explain the cash/bank balance adjustment (at least 8 characters).');
+  }
   if (['FUNDING_IN', 'DIRECT_FUNDED_EXPENSE'].includes(t.type) && !t.fundingSourceId) throw new Error('Funding source is required.');
   if (['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT','REFUND'].includes(t.type) && !['ACQUISITION','CONSTRUCTION','OTHER'].includes(t.costBucket || '')) {
     throw new Error('Choose an acquisition, construction or other cost bucket.');
