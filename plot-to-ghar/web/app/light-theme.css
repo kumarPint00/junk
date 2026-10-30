@@ -343,3 +343,17 @@ input[type="range"]{accent-color:#19ad7d}
 @media(prefers-reduced-motion:reduce){
   *,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
 }
+
+/* Material estimator: reference-inspired work-type selector and result board */
+.estimateModes{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;background:#f1f5f9;border:1px solid #e5ebf1;border-radius:13px;padding:5px}
+.estimateModes button{border:0;background:transparent;color:#647a90;padding:10px 8px;border-radius:9px;font-size:12px;font-weight:760;cursor:pointer}
+.estimateModes button:hover{color:#14966e;background:#f9fcfb}
+.estimateModes button.selected{background:#18a979;color:#fff;box-shadow:0 2px 10px rgba(24,169,121,.12)}
+.materialEstimator .estimateNote{margin:0;font-size:11px}
+.estimateResults{border-top:1px solid var(--line);padding-top:18px}
+.estimateResults h3{margin:0 0 12px;font-size:15px;letter-spacing:-.02em}
+.estimateResultGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.estimateResult{padding:14px;border:1px solid #e0eaf0;background:#f8fbfc;border-radius:13px;display:flex;flex-direction:column;gap:11px}
+.estimateResult span{font-size:11px;color:#72859a}.estimateResult b{font-size:21px;letter-spacing:-.04em;color:#158b68}
+.materialStockRow{flex-wrap:wrap}.materialStockRow .secondary{min-height:32px}
+@media(max-width:600px){.estimateModes{grid-template-columns:repeat(2,minmax(0,1fr))}.estimateResultGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.estimateResult{padding:11px}.estimateResult b{font-size:18px}}
