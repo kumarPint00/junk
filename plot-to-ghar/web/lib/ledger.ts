@@ -213,7 +213,7 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
     }
     return true;
   }
-  if (t.reversalOf && t.type !== 'REVERSAL' && transactions.some((x) => x.reversalOf === t.reversalOf)) {
+  if (t.reversalOf && transactions.some((x) => x.reversalOf === t.reversalOf)) {
     throw new Error('Transaction has already been reversed.');
   }
 
