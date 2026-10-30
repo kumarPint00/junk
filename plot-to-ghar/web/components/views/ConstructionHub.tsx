@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Building2, CalendarDays, Calculator, ClipboardList, FileText, FolderOpen, HardHat, Landmark, Package, ScanLine, Bell, Camera, BarChart3, ChevronLeft, Pencil } from 'lucide-react';
 import type { ConstructionSuite, ProjectState, Transaction, FloorPlan, WorkTask } from '@/lib/types';
 import { money, PageTitle } from '@/components/ui';
-import { hasScheduleCycle, materialEstimate } from '@/lib/construction-calcs';
+import { hasScheduleCycle, materialEstimate, plasterEstimate, flooringEstimate } from '@/lib/construction-calcs';
 import { MaterialsView, AgreementsView, ProgressView, FinanceView, RemindersView, ReceiptView } from './ConstructionTools';
 import { DocumentsView, ReportsView } from './ConstructionInsights';
 
@@ -146,31 +146,81 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
 }
 
 export function MaterialEstimator() {
-  const [kind, setKind] = useState<'concrete'|'brickwork'>('concrete');
+  const [kind, setKind] = useState<'concrete'|'brickwork'|'plaster'|'flooring'>('concrete');
   const [length, setLength] = useState('5');
   const [width, setWidth] = useState('3');
   const [depth, setDepth] = useState('0.15');
-  const result = useMemo(() => materialEstimate(kind, numeric(length), numeric(width), numeric(depth)), [kind, length, width, depth]);
-  return <div className="form">
-    <label>Work type<select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-      <option value="concrete">Nominal M20 (1:1.5:3) concrete allowance</option>
-      <option value="brickwork">Brickwork volume</option>
-    </select></label>
+  const [wallThickness, setWallThickness] = useState('0.23');
+  const [wallHeight, setWallHeight] = useState('3');
+  const [plasterMm, setPlasterMm] = useState('12');
+  const [tileL, setTileL] = useState('60');
+  const [tileW, setTileW] = useState('60');
+  const [waste, setWaste] = useState('5');
+
+  const area = Math.max(0, numeric(length) * numeric(width));
+  const concrete = useMemo(() => materialEstimate('concrete', numeric(length), numeric(width), numeric(depth)), [length,width,depth]);
+  const brick = useMemo(() => materialEstimate('brickwork', numeric(length), numeric(wallThickness), numeric(wallHeight)), [length,wallThickness,wallHeight]);
+  const plaster = useMemo(() => plasterEstimate(numeric(length) * numeric(wallHeight), numeric(plasterMm)), [length,wallHeight,plasterMm]);
+  const tiles = useMemo(() => flooringEstimate(area, numeric(tileL), numeric(tileW), numeric(waste)), [area,tileL,tileW,waste]);
+  const kinds = [
+    {id:'concrete',label:'Concrete slab'},
+    {id:'brickwork',label:'Brick wall'},
+    {id:'plaster',label:'Plaster'},
+    {id:'flooring',label:'Floor tiles'},
+  ] as const;
+
+  return <div className="form materialEstimator">
+    <div className="estimateModes" role="tablist" aria-label="Material estimate work type">
+      {kinds.map(k=><button type="button" role="tab" aria-selected={kind===k.id} key={k.id} className={kind===k.id?'selected':''} onClick={()=>setKind(k.id)}>{k.label}</button>)}
+    </div>
+    <p className="muted estimateNote">Illustrative starting dimensions are shown. Change every measurement to match your approved drawings. Results are purchase allowances, not structural design.</p>
     <div className="grid3">
-      <label>Length (m)<input type="number" step="any" min="0.001" value={length} onChange={(e) => setLength(e.target.value)} /></label>
-      <label>Width (m)<input type="number" step="any" min="0.001" value={width} onChange={(e) => setWidth(e.target.value)} /></label>
-      <label>Depth / height (m)<input type="number" step="any" min="0.001" value={depth} onChange={(e) => setDepth(e.target.value)} /></label>
+      <label>{kind==='flooring'?'Room length':kind==='plaster'?'Wall length':'Length'} (m)
+        <input type="number" step="any" min="0.001" value={length} onChange={e=>setLength(e.target.value)}/></label>
+      {(kind==='concrete'||kind==='flooring') && <label>Width (m)
+        <input type="number" step="any" min="0.001" value={width} onChange={e=>setWidth(e.target.value)}/></label>}
+      {kind==='concrete' && <label>Slab thickness (m)
+        <input type="number" step="any" min="0.001" value={depth} onChange={e=>setDepth(e.target.value)}/></label>}
+      {kind==='brickwork' && <label>Wall thickness (m)
+        <input type="number" step="any" min="0.001" value={wallThickness} onChange={e=>setWallThickness(e.target.value)}/></label>}
+      {(kind==='brickwork'||kind==='plaster') && <label>Wall height (m)
+        <input type="number" step="any" min="0.001" value={wallHeight} onChange={e=>setWallHeight(e.target.value)}/></label>}
+      {kind==='plaster' && <label>Plaster thickness (mm)
+        <input type="number" step="any" min="1" value={plasterMm} onChange={e=>setPlasterMm(e.target.value)}/></label>}
+      {kind==='flooring' && <>
+        <label>Tile length (cm)<input type="number" min="1" step="any" value={tileL} onChange={e=>setTileL(e.target.value)}/></label>
+        <label>Tile width (cm)<input type="number" min="1" step="any" value={tileW} onChange={e=>setTileW(e.target.value)}/></label>
+        <label>Waste allowance (%)<input type="number" min="0" max="50" step="any" value={waste} onChange={e=>setWaste(e.target.value)}/></label>
+      </>}
     </div>
-    <div className="cards">
-      <div className="card"><small>Volume</small><strong>{result.volume.toFixed(2)} m³</strong></div>
-      {kind === 'concrete' ? <>
-        <div className="card"><small>Cement (50 kg bags)</small><strong>{result.cementBags}</strong></div>
-        <div className="card"><small>Sand</small><strong>{result.sandM3.toFixed(2)} m³</strong></div>
-        <div className="card"><small>Aggregate</small><strong>{result.aggregateM3.toFixed(2)} m³</strong></div>
-        <div className="card"><small>Indicative steel range</small><strong>{result.steelKgLow}–{result.steelKgHigh} kg</strong></div>
-      </> : <div className="card"><small>Approximate bricks</small><strong>{result.bricks.toLocaleString('en-IN')}</strong></div>}
+    <div className="estimateResults">
+      <h3>Estimated materials</h3>
+      <div className="estimateResultGrid">
+        {kind==='concrete' && <>
+          <div className="estimateResult"><span>Concrete volume</span><b>{concrete.volume.toFixed(2)} m³</b></div>
+          <div className="estimateResult"><span>Cement (50 kg bags)</span><b>{concrete.cementBags}</b></div>
+          <div className="estimateResult"><span>Sand</span><b>{concrete.sandM3.toFixed(2)} m³</b></div>
+          <div className="estimateResult"><span>Aggregate</span><b>{concrete.aggregateM3.toFixed(2)} m³</b></div>
+          <div className="estimateResult"><span>Indicative steel range</span><b>{concrete.steelKgLow}–{concrete.steelKgHigh} kg</b></div>
+        </>}
+        {kind==='brickwork' && <>
+          <div className="estimateResult"><span>Wall volume</span><b>{brick.volume.toFixed(2)} m³</b></div>
+          <div className="estimateResult"><span>Approximate bricks</span><b>{brick.bricks.toLocaleString('en-IN')}</b></div>
+        </>}
+        {kind==='plaster' && <>
+          <div className="estimateResult"><span>Plaster surface</span><b>{plaster.areaM2.toFixed(2)} m²</b></div>
+          <div className="estimateResult"><span>Wet mortar</span><b>{plaster.wetM3.toFixed(3)} m³</b></div>
+          <div className="estimateResult"><span>Cement (50 kg bags)</span><b>{plaster.cementBags}</b></div>
+          <div className="estimateResult"><span>Sand (1:4 mix)</span><b>{plaster.sandM3.toFixed(3)} m³</b></div>
+        </>}
+        {kind==='flooring' && <>
+          <div className="estimateResult"><span>Floor area</span><b>{tiles.areaM2.toFixed(2)} m²</b></div>
+          <div className="estimateResult"><span>Tiles before wastage</span><b>{tiles.tilesWithoutWaste}</b></div>
+          <div className="estimateResult"><span>Tiles incl. wastage</span><b>{tiles.tilesWithWaste}</b></div>
+        </>}
+      </div>
     </div>
-    <p className="warning">Not an engineering design or bill of quantities. Mix, reinforcement, wall thickness, openings, wastage and approved drawings change requirements. Consult your structural engineer before purchasing or casting.</p>
+    <p className="warning">Planning-only estimate: no openings, reinforcement design, mortar-joint design, cutting pattern or site-specific losses are modeled. Concrete assumes nominal 1:1.5:3 and plaster uses 1:4. Confirm specifications with your engineer and supplier before purchase.</p>
   </div>;
 }
 
