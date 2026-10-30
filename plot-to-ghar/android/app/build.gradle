@@ -13,8 +13,8 @@ android {
         applicationId 'com.plottoghar.app'
         minSdk 26
         targetSdk 35
-        versionCode 200
-        versionName '2.0.0'
+        versionCode 220
+        versionName '2.2.0'
         buildConfigField 'String', 'APP_URL', '"https://plot-to-ghar.vercel.app"'
     }
 
