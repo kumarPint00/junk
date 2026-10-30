@@ -210,6 +210,27 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
   return true;
 }
 
+
+export function refundableExpenses(txs: Transaction[]) {
+  const reversed = new Set(txs.map((t) => t.reversalOf).filter(Boolean));
+  return txs.filter((t) => ['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE_ADJUSTMENT'].includes(t.type) && !reversed.has(t.id))
+    .map((original) => {
+      const used = txs.filter((t) => t.type === 'REFUND' && t.linkedTransactionId === original.id && !reversed.has(t.id))
+        .reduce((a, t) => a + paise(t.amount), 0);
+      return { original, remaining: rupees(paise(original.amount) - used) };
+    }).filter((x) => x.remaining > 0);
+}
+
+export function unsettledAdvances(txs: Transaction[]) {
+  const reversed = new Set(txs.map((t) => t.reversalOf).filter(Boolean));
+  return txs.filter((t) => t.type === 'ADVANCE' && !reversed.has(t.id))
+    .map((advance) => {
+      const used = txs.filter((t) => ['ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(t.type) && t.linkedTransactionId === advance.id && !reversed.has(t.id))
+        .reduce((a, t) => a + paise(t.amount), 0);
+      return { advance, remaining: rupees(paise(advance.amount) - used) };
+    }).filter((x) => x.remaining > 0);
+}
+
 function normalize(v?: string) { return String(v || '').trim().toLowerCase(); }
 export function findPotentialDuplicate(t: Partial<Transaction>, rows: Transaction[]) {
   if (t.type === 'REVERSAL') return undefined;
