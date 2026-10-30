@@ -184,6 +184,13 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
   checkId(state?.construction.floors, t.floorId, 'Floor / zone');
   checkId(state?.vendors, t.vendorId, 'Vendor');
   checkId(state?.contractors, t.contractorId, 'Contractor');
+  checkId(state?.construction.agreements, t.agreementId, 'Contractor agreement');
+  if (t.agreementId && state) {
+    const agreement = state.construction.agreements.find((a) => a.id === t.agreementId);
+    if (agreement && t.contractorId && agreement.contractorId !== t.contractorId) {
+      throw new Error('The agreement belongs to a different contractor.');
+    }
+  }
 
   if (t.type === 'LOAN_REPAYMENT') {
     const splits = [t.loanPrincipalAmount, t.loanInterestAmount, t.loanFeeAmount];
@@ -222,6 +229,7 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
     const { a, available } = remainingAdvance(t.linkedTransactionId, transactions);
     if (paise(n) > available) throw new Error('Settlement exceeds the remaining advance.');
     if (t.contractorId && a.contractorId && t.contractorId !== a.contractorId) throw new Error('Advance belongs to a different contractor.');
+    if (t.agreementId && a.agreementId && t.agreementId !== a.agreementId) throw new Error('Advance belongs to a different agreement.');
     if (t.type === 'ADVANCE_REFUND' && a.sourceAccountId !== t.destinationAccountId) {
       throw new Error('Return the advance to the original payment account.');
     }
@@ -232,6 +240,7 @@ export function validateTx(t: Partial<Transaction>, { state, transactions = [] }
     if (paise(n) > available) throw new Error('Refund exceeds the original expense balance.');
     if (original.costBucket && t.costBucket !== original.costBucket) throw new Error('Refund cost bucket must match the original expense.');
     if (t.phaseId && original.phaseId && t.phaseId !== original.phaseId) throw new Error('Refund must use the original phase.');
+    if (t.agreementId && original.agreementId && t.agreementId !== original.agreementId) throw new Error('Refund must use the original agreement.');
     if (t.floorId && original.floorId && t.floorId !== original.floorId) throw new Error('Refund must use the original floor.');
   }
   if (t.type === 'REFUND' && t.reversalOf) {
@@ -292,4 +301,32 @@ export function findPotentialDuplicate(t: Partial<Transaction>, rows: Transactio
       String(x.transactionDate).slice(0, 10) === day && normalize(x.payee) === normalize(t.payee) &&
       normalize(x.category) === normalize(t.category) && x.linkedTransactionId === t.linkedTransactionId;
   });
+}
+
+/** Agreement-specific paid cash and recognized work. Advances are not work
+ * until adjusted; the same payment is never counted twice. */
+export function agreementFinancials(txs: Transaction[], agreementId: string) {
+  const byId = new Map(txs.map((t)=>[t.id,t]));
+  let cashPaid = 0, recognizedWork = 0, openAdvance = 0;
+  const apply = (t: Transaction, sign: number) => {
+    const linked = byId.get(t.linkedTransactionId || '');
+    if ((t.agreementId || linked?.agreementId) !== agreementId) return;
+    const n = paise(t.amount) * sign;
+    switch(t.type) {
+      case 'EXPENSE': cashPaid += n; recognizedWork += n; break;
+      case 'DIRECT_FUNDED_EXPENSE': cashPaid += n; recognizedWork += n; break;
+      case 'ADVANCE': cashPaid += n; openAdvance += n; break;
+      case 'ADVANCE_ADJUSTMENT': recognizedWork += n; openAdvance -= n; break;
+      case 'ADVANCE_REFUND': cashPaid -= n; openAdvance -= n; break;
+      case 'REFUND': cashPaid -= n; recognizedWork -= n; break;
+      default: break;
+    }
+  };
+  for (const t of txs) {
+    if (t.type === 'REVERSAL') {
+      const original = byId.get(t.reversalOf || '');
+      if (original) apply(original,-1);
+    } else apply(t,1);
+  }
+  return { cashPaid:rupees(cashPaid), recognizedWork:rupees(recognizedWork), openAdvance:rupees(openAdvance) };
 }
