@@ -61,6 +61,7 @@ export function AddTransaction({
   const [floorId, setFloorId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [contractorId, setContractorId] = useState('');
+  const [agreementId, setAgreementId] = useState('');
   const [costBucket, setCostBucket] = useState<'ACQUISITION' | 'CONSTRUCTION' | 'OTHER'>('CONSTRUCTION');
   const [attachments, setAttachments] = useState<AttachmentRef[]>(prefill?.attachment ? [prefill.attachment] : []);
   const [items, setItems] = useState<LineItem[]>([]);
@@ -125,6 +126,7 @@ export function AddTransaction({
       setCostBucket(found.costBucket || 'CONSTRUCTION');
       setPhaseId(found.phaseId || '');
       setContractorId(found.contractorId || '');
+      setAgreementId(found.agreementId || '');
       setPayee(found.payee || '');
       setCategory(found.category || 'Advance settlement');
       if (type === 'ADVANCE_REFUND') setDest(found.sourceAccountId || '');
@@ -143,6 +145,7 @@ export function AddTransaction({
     setPayee(original.payee || '');
     setVendorId(original.vendorId || '');
     setContractorId(original.contractorId || '');
+    setAgreementId(original.agreementId || '');
     setDescription('Refund for expense ' + original.id);
   }
 
@@ -171,6 +174,9 @@ export function AddTransaction({
         : floorId || undefined,
       vendorId: vendorId || undefined,
       contractorId: contractorId || undefined,
+      agreementId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.agreementId
+        : agreementId || undefined,
       costBucket: type === 'REFUND' && linkedTransactionId
         ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.costBucket || 'OTHER'
         : costBucket,
@@ -382,6 +388,20 @@ export function AddTransaction({
             </select>
           </label>
         </div>
+
+        {['EXPENSE','ADVANCE','ADVANCE_ADJUSTMENT','ADVANCE_REFUND','REFUND','DIRECT_FUNDED_EXPENSE'].includes(type) && state.construction.agreements.length > 0 ? (
+          <label>Contractor agreement (optional, for exact contract reconciliation)
+            <select disabled={type === 'REFUND' || type === 'ADVANCE_ADJUSTMENT' || type === 'ADVANCE_REFUND'} value={agreementId} onChange={(e) => {
+              const next = e.target.value;
+              setAgreementId(next);
+              const agreement = state.construction.agreements.find((a)=>a.id===next);
+              if (agreement) setContractorId(agreement.contractorId);
+            }}>
+              <option value="">Unassigned agreement</option>
+              {state.construction.agreements.filter((a) => !contractorId || a.contractorId === contractorId).map((a)=><option key={a.id} value={a.id}>{a.title}</option>)}
+            </select>
+          </label>
+        ) : null}
 
         <div className="grid2">
           <label>
