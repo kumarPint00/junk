@@ -13,3 +13,25 @@
 .negativeStock{color:var(--danger)!important}
 .suiteRecord .check{display:flex!important;gap:8px!important}.suiteRecord .check input{width:auto!important}
 @media(max-width:580px){nav button{font-size:9px}.suiteTabs{margin:0 -4px}.suiteRecord{padding:10px}}
+
+/* Finance integrity and editing surfaces · v2.4 */
+.dashActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.dashboardTitle{align-items:center;gap:15px;flex-wrap:wrap}
+.dashboardTitle>.pageTitle{flex:1}
+.dashboardTitle button{white-space:nowrap}
+.integrityWarnings{display:grid;gap:6px;margin:11px 0}
+.integrityWarnings small{display:block;line-height:1.45;overflow-wrap:anywhere}
+.phaseEditor{max-height:500px;overflow-y:auto;border:1px solid var(--line);border-radius:14px;padding:9px}
+.editDetails{margin-top:6px;border-top:1px dashed #334761;padding-top:10px}
+.editDetails summary{cursor:pointer;color:var(--accent2);font-size:12px;font-weight:700}
+.editDetails .detailsBody{padding-top:10px}
+.suiteRecord summary{cursor:pointer}
+.suiteRecord .grid2,.suiteRecord .grid3{padding-top:5px}
+.suiteRecord .form button{width:100%}
+.warning .secondary{margin-top:9px}
+@media(max-width:580px){
+  .dashActions{grid-template-columns:1fr 1fr}
+  .dashActions button{min-width:0;padding:10px 6px;font-size:11px}
+  .dashboardTitle>.pageTitle{flex-basis:100%}
+  .phaseEditor{max-height:340px}
+}
