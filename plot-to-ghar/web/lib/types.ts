@@ -173,6 +173,17 @@ export type ConstructionSuite = {
   reminders: ProjectReminder[];
 };
 
+export type FinancialAllocation = {
+  id: string;
+  transactionId: string;
+  createdAt: string;
+  reason: string;
+  floorId?: string;
+  phaseId?: string;
+  costBucket: CostBucket;
+  category: string;
+};
+
 export type ProjectState = {
   version: number;
   revision?: number;
@@ -195,6 +206,7 @@ export type ProjectState = {
   contractors: Entity[];
   loans: LoanFacility[];
   cashReconciliations: CashReconciliation[];
+  financialAllocations: FinancialAllocation[];
   construction: ConstructionSuite;
   updatedAt: string;
 };
