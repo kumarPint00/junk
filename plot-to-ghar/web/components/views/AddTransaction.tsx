@@ -42,6 +42,7 @@ export function AddTransaction({
   prefill?: { amount: string; date: string; payee: string; description: string; attachment?: AttachmentRef };
 }) {
   const [type, setType] = useState<TxType>('EXPENSE');
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'IN' | 'OUT'>('IN');
   const [amount, setAmount] = useState(prefill?.amount || '');
   const [source, setSource] = useState('');
   const [dest, setDest] = useState('');
@@ -152,8 +153,8 @@ export function AddTransaction({
       transactionDate: new Date(date + 'T12:00:00').toISOString(),
       type,
       amount: finalAmount,
-      sourceAccountId: source || undefined,
-      destinationAccountId: dest || undefined,
+      sourceAccountId: type === 'BALANCE_ADJUSTMENT' ? (adjustmentDirection === 'OUT' ? source || undefined : undefined) : source || undefined,
+      destinationAccountId: type === 'BALANCE_ADJUSTMENT' ? (adjustmentDirection === 'IN' ? dest || undefined : undefined) : dest || undefined,
       fundingSourceId: funding || undefined,
       milestoneId: milestoneId || undefined,
       phaseId: type === 'REFUND' && linkedTransactionId
@@ -175,8 +176,8 @@ export function AddTransaction({
     await onSave(tx);
   }
 
-  const needsSource = ['EXPENSE', 'TRANSFER', 'ADVANCE', 'LOAN_REPAYMENT'].includes(type);
-  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND', 'ADVANCE_REFUND'].includes(type);
+  const needsSource = ['EXPENSE', 'TRANSFER', 'ADVANCE', 'LOAN_REPAYMENT'].includes(type) || (type === 'BALANCE_ADJUSTMENT' && adjustmentDirection === 'OUT');
+  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND', 'ADVANCE_REFUND'].includes(type) || (type === 'BALANCE_ADJUSTMENT' && adjustmentDirection === 'IN');
   const settlesAdvance = ['ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(type);
   const isCost = ['EXPENSE', 'ADVANCE_ADJUSTMENT', 'REFUND', 'DIRECT_FUNDED_EXPENSE'].includes(type);
 
@@ -203,9 +204,20 @@ export function AddTransaction({
             <option value="REFUND">Expense refund</option>
             <option value="DIRECT_FUNDED_EXPENSE">Lender paid expense directly</option>
             <option value="LOAN_REPAYMENT">Loan repayment — not project cost</option>
+            <option value="BALANCE_ADJUSTMENT">Audited bank/cash balance correction (not expense)</option>
           </select>
         </label>
 
+        {type === 'BALANCE_ADJUSTMENT' ? (
+          <div className="warning">
+            Use only to reconcile a verified discrepancy with a written reason. This changes the account balance, but it never changes project cost or pretends fresh funding was received.
+            <label>Correction direction
+              <select value={adjustmentDirection} onChange={(e) => setAdjustmentDirection(e.target.value as 'IN' | 'OUT')}>
+                <option value="IN">Increase account balance</option><option value="OUT">Decrease account balance</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
         <div className="grid2">
           <label>
             Amount
@@ -346,7 +358,7 @@ export function AddTransaction({
 
         <label>
           Description
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What was this for?" />
+          <textarea required={type === "BALANCE_ADJUSTMENT"} minLength={type === "BALANCE_ADJUSTMENT" ? 8 : undefined} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={type === "BALANCE_ADJUSTMENT" ? "Why does physical/bank cash differ from the ledger? Reference the bank statement." : "What was this for?"} />
         </label>
 
         <div className="lineItemHead">
@@ -354,7 +366,7 @@ export function AddTransaction({
             <b>Itemized materials</b>
             <small>Optional. Quantity × rate automatically becomes the transaction total.</small>
           </div>
-          <button type="button" className="secondary small" onClick={addItem}>+ Item</button>
+          <button type="button" className="secondary small" disabled={type === "BALANCE_ADJUSTMENT"} onClick={addItem}>+ Item</button>
         </div>
 
         {items.map((item, i) => (
