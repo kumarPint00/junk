@@ -63,3 +63,20 @@ Object storage variables:
 
 ## Health
 `GET /api/health` returns database/storage configuration status and application version without exposing credentials.
+
+## Construction Studio v2.3
+- Floor-wise budgets for ground-floor shops/parking, first floor and terrace. Floor built-up area must be entered from drawings; it is never assumed equal to plot area.
+- Rough concrete/brickwork quantity estimator; **not structural design**, purchase quantity must be approved by engineer.
+- Construction tasks with dates, dependencies, floor, phase, contractor and cost forecast.
+- Material inventory receipt, issue, wastage, vendor return and manual reconciliation. Stock movements never post ledger expenses. Existing material purchase transaction can be linked for traceability.
+- Contractor agreements: scope, value, advance ceiling, payment terms, retention, optional signed document.
+- Site-photo progress diary: attachments, milestone/floor/date/progress, included in standalone full backups.
+- Loan EMI and extra-payment simulation using manually verified outstanding principal; six-month scheduled-work/cash forecast based on actual project account balances, not undisbursed loan commitments.
+- Local reminders: EMI, contractor payment, delivery and site work. The Android shell schedules **inexact** local device notifications, rearmed after reboot, subject to Android permissions/energy restrictions. Website browser notifications fire only while the app is open. Remote web push is not configured.
+- Free Tesseract OCR for printed English receipt images; first language-data download needs internet. OCR results go to an **editable** expense draft, never auto-post.
+
+### Cost integrity & migration
+State normalization migrates V2 records additively. No migration deletes old transactions. Construction plans, estimates, stock movement, contracts and photos do not modify the ledger without an explicit independently validated transaction. Local backup captures photos attached to transactions, contractor agreements and progress entries. Use backup before installing major updates.
+
+### Remaining infrastructure gaps
+Cloud/multi-device sync requires a configured database and object store; existing default remains local IndexedDB with export/restore. Android APK uses debug fallback signing if permanent keystore secrets are unavailable. Server-pushed web notifications and unattended cloud reminders are not available without push subscription storage/credentials.
