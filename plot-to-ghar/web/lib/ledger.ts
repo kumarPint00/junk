@@ -1,4 +1,4 @@
-import type { Account, CostBucket, LedgerSummary, ProjectState, Transaction, TxType } from './types';
+import type { Account, CostBucket, FinancialAllocation, LedgerSummary, ProjectState, Transaction, TxType } from './types';
 
 // Use integral paise for all ledger additions/subtractions to avoid JS float drift.
 const paise = (n: number) => Math.round(Number(n) * 100);
@@ -19,7 +19,7 @@ function costDelta(t: Transaction, sign: number) {
   return (t.type === 'EXPENSE' || t.type === 'DIRECT_FUNDED_EXPENSE' || t.type === 'ADVANCE_ADJUSTMENT' ? 1 : t.type === 'REFUND' ? -1 : 0) * sign * paise(t.amount);
 }
 
-export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSummary {
+export function computeLedger(accounts: Account[], txs: Transaction[], allocations: FinancialAllocation[] = []): LedgerSummary {
   const balances: Record<string, number> = {};
   for (const a of accounts) balances[a.id] = paise(Number(a.openingBalance || 0));
   let projectCost = 0, acquisitionCost = 0, constructionCost = 0, otherCost = 0;
@@ -30,6 +30,8 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
   const receivedBySource: Record<string, number> = {}, advanceById: Record<string, number> = {};
   const integrityWarnings: string[] = [];
   const lookup = new Map(txs.map((t) => [t.id, t]));
+  const allocationByTransaction = new Map<string, FinancialAllocation>();
+  for (const a of allocations) allocationByTransaction.set(a.transactionId,a);
   const reversed = new Set(txs.filter((t) => t.reversalOf).map((t) => t.reversalOf));
   const seen = new Set<string>();
 
@@ -63,16 +65,18 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
     const delta = costDelta(t, sign);
     if (!delta) return;
     projectCost += delta;
-    const bucket = moneyBucket(t, lookup);
+    const linked = t.type === 'REFUND' ? lookup.get(t.linkedTransactionId || '') : undefined;
+    const classified = linked || t;
+    const override = allocationByTransaction.get(classified.id);
+    const bucket = override?.costBucket || moneyBucket(t, lookup);
     if (bucket === 'ACQUISITION') acquisitionCost += delta;
     else if (bucket === 'CONSTRUCTION') constructionCost += delta;
     else otherCost += delta;
-    const linked = t.type === 'REFUND' ? lookup.get(t.linkedTransactionId || '') : null;
-    accumulate(phaseSpend, linked?.phaseId || t.phaseId, delta);
-    const floorId = linked?.floorId || t.floorId;
+    accumulate(phaseSpend, override ? override.phaseId : linked?.phaseId || t.phaseId, delta);
+    const floorId = override ? override.floorId : linked?.floorId || t.floorId;
     if (bucket === 'CONSTRUCTION' && !floorId) unallocatedConstructionCost += delta;
     accumulate(floorSpend, floorId, delta);
-    accumulate(categorySpend, linked?.category || t.category || 'Uncategorized', delta);
+    accumulate(categorySpend, override?.category || linked?.category || t.category || 'Uncategorized', delta);
     accumulate(monthlySpend, String(t.transactionDate || '').slice(0, 7) || 'Unknown', delta);
   };
 
