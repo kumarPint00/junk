@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireAuth, err } from '@/lib/api';
 import { getState, listTransactions, saveState } from '@/lib/store';
 import { computeLedger } from '@/lib/ledger';
-import { normalizeState, validateProjectState } from '@/lib/defaults';
+import { normalizeState, validateProjectState, validateStateTransition } from '@/lib/defaults';
 import type { ProjectState } from '@/lib/types';
 
 export async function GET() {
@@ -22,6 +22,8 @@ export async function PUT(req: Request) {
   try {
     const raw = (await req.json()) as ProjectState;
     const state = validateProjectState(normalizeState(raw));
+    const [previous, transactions] = await Promise.all([getState(), listTransactions()]);
+    validateStateTransition(previous, state, transactions);
     return NextResponse.json(
       { state: await saveState(state) },
       { headers: { 'Cache-Control': 'no-store' } }
