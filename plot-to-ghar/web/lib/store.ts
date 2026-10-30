@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless';
-import { defaultState } from './defaults';
+import { defaultState, normalizeState } from './defaults';
 import type { ProjectState, Transaction } from './types';
 
 function db() {
@@ -33,14 +33,8 @@ async function ensureSchema() {
         inserted_at timestamptz not null default now()
       )
     `;
-    await sql`
-      create index if not exists ptg_transactions_date_idx
-      on ptg_transactions(transaction_date, created_at)
-    `;
-    await sql`
-      create index if not exists ptg_transactions_reversal_idx
-      on ptg_transactions(reversal_of)
-    `;
+    await sql`create index if not exists ptg_transactions_date_idx on ptg_transactions(transaction_date, created_at)`;
+    await sql`create index if not exists ptg_transactions_reversal_idx on ptg_transactions(reversal_of)`;
     await sql`
       create table if not exists ptg_audit (
         id bigserial primary key,
@@ -48,6 +42,20 @@ async function ensureSchema() {
         action text not null,
         transaction_id text,
         payload jsonb not null default '{}'::jsonb
+      )
+    `;
+    await sql`
+      create table if not exists ptg_login_attempts (
+        client_key text not null,
+        attempted_at timestamptz not null default now()
+      )
+    `;
+    await sql`create index if not exists ptg_login_attempts_key_idx on ptg_login_attempts(client_key, attempted_at)`;
+    await sql`
+      create table if not exists ptg_restore_points (
+        id bigserial primary key,
+        created_at timestamptz not null default now(),
+        payload jsonb not null
       )
     `;
   })().catch((error) => {
@@ -61,12 +69,17 @@ export async function getState(): Promise<ProjectState> {
   await ensureSchema();
   const sql = db();
   const rows = await sql`select payload from ptg_state where id = 'singleton' limit 1`;
-  return (rows[0]?.payload as ProjectState | undefined) ?? defaultState();
+  return normalizeState((rows[0]?.payload as ProjectState | undefined) ?? defaultState());
 }
 
 export async function saveState(state: ProjectState) {
   await ensureSchema();
-  const next = { ...state, updatedAt: new Date().toISOString() };
+  const current = await getState();
+  const next = normalizeState({
+    ...state,
+    revision: Math.max(Number(current.revision || 1) + 1, Number(state.revision || 1)),
+    updatedAt: new Date().toISOString(),
+  });
   const sql = db();
   await sql`
     insert into ptg_state (id, payload, updated_at)
@@ -91,9 +104,14 @@ export async function listTransactions(): Promise<Transaction[]> {
 export async function getTransaction(id: string): Promise<Transaction | null> {
   await ensureSchema();
   const sql = db();
-  const rows = await sql`
-    select payload from ptg_transactions where id = ${id} limit 1
-  `;
+  const rows = await sql`select payload from ptg_transactions where id = ${id} limit 1`;
+  return (rows[0]?.payload as Transaction | undefined) ?? null;
+}
+
+export async function findReversalFor(id: string): Promise<Transaction | null> {
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`select payload from ptg_transactions where reversal_of = ${id} limit 1`;
   return (rows[0]?.payload as Transaction | undefined) ?? null;
 }
 
@@ -131,7 +149,18 @@ export async function putTransaction(transaction: Transaction) {
 export async function replaceAll(state: ProjectState, transactions: Transaction[]) {
   await ensureSchema();
   const sql = db();
-  const next = { ...state, updatedAt: new Date().toISOString() };
+  const previousState = await getState();
+  const previousTransactions = await listTransactions();
+  const snapshot = JSON.stringify({
+    format: 'plot-to-ghar-restore-point-v2',
+    createdAt: new Date().toISOString(),
+    state: previousState,
+    transactions: previousTransactions,
+  });
+  await sql`insert into ptg_restore_points (payload) values (${snapshot}::jsonb)`;
+  await sql`delete from ptg_restore_points where id not in (select id from ptg_restore_points order by id desc limit 10)`;
+
+  const next = normalizeState({ ...state, updatedAt: new Date().toISOString() });
   const txJson = JSON.stringify(transactions);
   await sql`
     with state_upsert as (
@@ -161,4 +190,29 @@ export async function replaceAll(state: ProjectState, transactions: Transaction[
     insert into ptg_audit (action, payload)
     values ('RESTORE_BACKUP', ${JSON.stringify({ transactionCount: transactions.length })}::jsonb)
   `;
+}
+
+export async function getLoginAttemptCount(clientKey: string, windowMinutes = 15) {
+  await ensureSchema();
+  const sql = db();
+  const rows = await sql`
+    select count(*)::int as count
+    from ptg_login_attempts
+    where client_key = ${clientKey}
+      and attempted_at > now() - (${windowMinutes}::text || ' minutes')::interval
+  `;
+  return Number(rows[0]?.count || 0);
+}
+
+export async function recordLoginAttempt(clientKey: string) {
+  await ensureSchema();
+  const sql = db();
+  await sql`insert into ptg_login_attempts (client_key) values (${clientKey})`;
+  await sql`delete from ptg_login_attempts where attempted_at < now() - interval '24 hours'`;
+}
+
+export async function clearLoginAttempts(clientKey: string) {
+  await ensureSchema();
+  const sql = db();
+  await sql`delete from ptg_login_attempts where client_key = ${clientKey}`;
 }

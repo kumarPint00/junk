@@ -1,44 +1,333 @@
 'use client';
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AttachmentRef, ProjectState, Transaction, TxType } from '@/lib/types';
+import type { ProjectState, Transaction } from '@/lib/types';
 import { computeLedger } from '@/lib/ledger';
+import { Home } from '@/components/views/Home';
+import { Journey } from '@/components/views/Journey';
+import { AddTransaction } from '@/components/views/AddTransaction';
+import { Ledger } from '@/components/views/Ledger';
+import { More } from '@/components/views/More';
 
-type Tab='home'|'journey'|'add'|'ledger'|'more';
-const money=(n:number)=>new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',maximumFractionDigits:0}).format(n||0);
-const QUEUE='ptg_offline_queue_v1';
-function readQueue():Transaction[]{ try{return JSON.parse(localStorage.getItem(QUEUE)||'[]')}catch{return[]} }
-function writeQueue(q:Transaction[]){ localStorage.setItem(QUEUE,JSON.stringify(q)); }
+type Tab = 'home' | 'journey' | 'add' | 'ledger' | 'more';
 
-export function AppShell(){
- const [auth,setAuth]=useState<'loading'|'yes'|'no'>('loading'); const [pin,setPin]=useState(''); const [loginErr,setLoginErr]=useState('');
- const [state,setState]=useState<ProjectState|null>(null); const [txs,setTxs]=useState<Transaction[]>([]); const [tab,setTab]=useState<Tab>('home'); const [busy,setBusy]=useState(false); const [toast,setToast]=useState(''); const [online,setOnline]=useState(true); const [backendError,setBackendError]=useState('');
- const load=useCallback(async()=>{ try{ const [s,t]=await Promise.all([fetch('/api/state',{cache:'no-store'}),fetch('/api/transactions',{cache:'no-store'})]); if(s.status===401||t.status===401){setBackendError('');setAuth('no');return;} if(!s.ok||!t.ok){ const detail=await (s.ok?t:s).json().catch(()=>({error:'Backend unavailable'})); throw new Error(detail.error||'Backend unavailable'); } const sj=await s.json(), tj=await t.json(); setState(sj.state); setTxs(tj.transactions); setBackendError(''); setAuth('yes'); }catch(e){ setBackendError(e instanceof Error?e.message:'Backend unavailable'); setAuth('yes'); }},[]);
- const flush=useCallback(async()=>{ if(!navigator.onLine)return; const q=readQueue(); if(!q.length)return; const keep:Transaction[]=[]; for(const t of q){ try{ const r=await fetch('/api/transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)}); if(!r.ok&&r.status!==409) keep.push(t); }catch{keep.push(t);} } writeQueue(keep); if(keep.length!==q.length) await load(); },[load]);
- useEffect(()=>{load(); setOnline(navigator.onLine); if('serviceWorker'in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{}); const on=()=>{setOnline(true);flush();}; const off=()=>setOnline(false); window.addEventListener('online',on); window.addEventListener('offline',off); return()=>{window.removeEventListener('online',on);window.removeEventListener('offline',off);};},[load,flush]);
- useEffect(()=>{ if(toast){const t=setTimeout(()=>setToast(''),3000); return()=>clearTimeout(t);} },[toast]);
- const summary=useMemo(()=>state?computeLedger(state.accounts,txs):null,[state,txs]);
- async function login(e:React.FormEvent){e.preventDefault();setLoginErr('');const r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin})}); if(r.ok)load(); else setLoginErr((await r.json()).error||'Login failed');}
- async function saveState(next:ProjectState){setBusy(true);try{const r=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(next)});if(!r.ok)throw new Error((await r.json()).error);const j=await r.json();setState(j.state);setToast('Saved');}catch(e){setToast(e instanceof Error?e.message:'Save failed');}finally{setBusy(false);}}
- async function postTx(t:Transaction){ setBusy(true); try{ const r=await fetch('/api/transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(t)}); if(!r.ok) throw new Error((await r.json()).error||'Save failed'); const j=await r.json(); setTxs(x=>[...x,j.transaction].sort((a,b)=>a.transactionDate.localeCompare(b.transactionDate)));setToast('Transaction saved'); setTab('ledger'); }catch(e){ if(!navigator.onLine||String(e).includes('fetch')){const q=readQueue();q.push(t);writeQueue(q);setTxs(x=>[...x,t]);setToast('Saved offline; will sync automatically');setTab('ledger');} else setToast(e instanceof Error?e.message:'Save failed'); }finally{setBusy(false);} }
- if(auth==='loading') return <div className="center"><div className="spinner"/><p>Opening Plot to Ghar…</p></div>;
- if(auth==='no') return <main className="login"><section className="loginCard"><div className="brandMark">🏠</div><h1>Plot to Ghar</h1><p>Private property & construction ledger</p><form onSubmit={login}><label>Access PIN<input type="password" inputMode="numeric" value={pin} onChange={e=>setPin(e.target.value)} autoFocus/></label>{loginErr&&<div className="error">{loginErr}</div>}<button className="primary">Unlock</button></form></section></main>;
- if(backendError&&!state) return <main className="login"><section className="loginCard"><div className="brandMark">⚙️</div><h1>Backend setup pending</h1><p>{backendError}</p><p className="muted">Your web app and APK are ready. Connect the free Neon backend, then retry.</p><button className="primary" onClick={load}>Retry connection</button><button className="secondary" onClick={async()=>{await fetch('/api/auth/logout',{method:'POST'});location.reload()}}>Lock app</button></section></main>; if(!state||!summary)return null;
- return <div className="app"><header><div><strong>{state.project.name}</strong><small>{state.project.status.replaceAll('_',' ')}</small></div><span className={online?'online':'offline'}>{online?'● Online':'● Offline'}</span></header><main className="content">
-  {tab==='home'&&<Home state={state} txs={txs}/>} {tab==='journey'&&<Journey state={state} save={saveState}/>} {tab==='add'&&<AddTransaction state={state} onSave={postTx}/>} {tab==='ledger'&&<Ledger state={state} txs={txs}/>} {tab==='more'&&<More state={state} save={saveState} reload={load}/>} 
- </main><nav>{(['home','journey','add','ledger','more'] as Tab[]).map(x=><button key={x} onClick={()=>setTab(x)} className={tab===x?'active':''}><span>{x==='home'?'⌂':x==='journey'?'◉':x==='add'?'+':x==='ledger'?'☷':'•••'}</span>{x==='add'?'Add':x[0].toUpperCase()+x.slice(1)}</button>)}</nav>{busy&&<div className="busy">Saving…</div>}{toast&&<div className="toast">{toast}</div>}</div>;
+const TX_QUEUE = 'ptg_offline_queue_v2';
+const SNAPSHOT = 'ptg_snapshot_v2';
+const PENDING_STATE = 'ptg_pending_state_v2';
+
+function readTxQueue(): Transaction[] {
+  try { return JSON.parse(localStorage.getItem(TX_QUEUE) || '[]'); } catch { return []; }
+}
+function writeTxQueue(q: Transaction[]) {
+  localStorage.setItem(TX_QUEUE, JSON.stringify(q));
+}
+function writeSnapshot(state: ProjectState, txs: Transaction[]) {
+  localStorage.setItem(SNAPSHOT, JSON.stringify({ state, txs, at: Date.now() }));
+}
+function readSnapshot(): { state: ProjectState; txs: Transaction[] } | null {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SNAPSHOT) || 'null');
+    return parsed?.state && Array.isArray(parsed?.txs) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
-function Home({state,txs}:{state:ProjectState;txs:Transaction[]}){ const s=computeLedger(state.accounts,txs); const available=Object.values(s.accountBalances).reduce((a,b)=>a+b,0); const purchasePaid=txs.filter(t=>['Plot Purchase','Seller Payment','Token'].includes(t.category||'')).reduce((a,t)=>a+(t.type==='EXPENSE'||t.type==='DIRECT_FUNDED_EXPENSE'?t.amount:0),0); const next=state.milestones.find(m=>m.status!=='COMPLETED'&&m.status!=='SKIPPED'); return <div className="stack"><section className="hero"><small>TOTAL PROJECT COST</small><h1>{money(s.projectCost)}</h1><div className="heroGrid"><div><span>Available</span><b>{money(available)}</b></div><div><span>Funding received</span><b>{money(s.fundingReceived)}</b></div><div><span>Advances open</span><b>{money(s.advancesOutstanding)}</b></div></div></section><section className="cards"><Card label="Plot agreed price" value={money(state.project.agreedPurchasePrice)}/><Card label="Purchase recorded" value={money(purchasePaid)}/><Card label="Transactions" value={String(s.txCount)}/><Card label="Next milestone" value={next?.name||'Project complete'}/></section><section className="panel"><h2>Where is the project money?</h2>{state.accounts.filter(a=>a.active).map(a=><div className="row" key={a.id}><div><b>{a.name}</b><small>{a.type}</small></div><strong>{money(s.accountBalances[a.id]||0)}</strong></div>)}</section><section className="panel"><h2>Funding plan</h2>{state.fundingSources.map(f=>{const used=txs.filter(t=>t.fundingSourceId===f.id&&['FUNDING_IN','DIRECT_FUNDED_EXPENSE'].includes(t.type)).reduce((a,t)=>a+t.amount,0);return <div className="fund" key={f.id}><div className="row"><span>{f.name}</span><b>{money(used)} / {money(f.committedAmount)}</b></div><progress max={Math.max(1,f.committedAmount)} value={Math.min(used,f.committedAmount)}/></div>})}</section></div> }
-function Card({label,value}:{label:string;value:string}){return <div className="card"><small>{label}</small><strong>{value}</strong></div>}
+export function AppShell() {
+  const [auth, setAuth] = useState<'loading' | 'yes' | 'no'>('loading');
+  const [pin, setPin] = useState('');
+  const [loginErr, setLoginErr] = useState('');
+  const [state, setState] = useState<ProjectState | null>(null);
+  const [txs, setTxs] = useState<Transaction[]>([]);
+  const [tab, setTab] = useState<Tab>('home');
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState('');
+  const [online, setOnline] = useState(true);
+  const [backendError, setBackendError] = useState('');
 
-function Journey({state,save}:{state:ProjectState;save:(s:ProjectState)=>void}){ const update=(id:string,status:any)=>save({...state,milestones:state.milestones.map(m=>m.id===id?{...m,status,completedAt:status==='COMPLETED'?new Date().toISOString():undefined}:m)}); return <div className="stack"><div className="pageTitle"><h1>Property Journey</h1><p>From plot lock to completed building.</p></div><section className="panel timeline">{state.milestones.sort((a,b)=>a.sequence-b.sequence).map((m,i)=><div className="milestone" key={m.id}><div className={'dot '+m.status.toLowerCase()}>{m.status==='COMPLETED'?'✓':i+1}</div><div className="grow"><b>{m.name}</b><small>{m.status.replace('_',' ')}</small></div><select value={m.status} onChange={e=>update(m.id,e.target.value)}><option>PENDING</option><option>IN_PROGRESS</option><option>COMPLETED</option><option>SKIPPED</option></select></div>)}</section></div> }
+  const load = useCallback(async () => {
+    try {
+      const [stateResponse, txResponse] = await Promise.all([
+        fetch('/api/state', { cache: 'no-store' }),
+        fetch('/api/transactions', { cache: 'no-store' }),
+      ]);
 
-function AddTransaction({state,onSave}:{state:ProjectState;onSave:(t:Transaction)=>void}){ const [type,setType]=useState<TxType>('EXPENSE');const [amount,setAmount]=useState('');const [source,setSource]=useState('');const [dest,setDest]=useState('');const [funding,setFunding]=useState('');const [category,setCategory]=useState('');const [payee,setPayee]=useState('');const [desc,setDesc]=useState('');const [date,setDate]=useState(new Date().toISOString().slice(0,10));const [milestone,setMilestone]=useState(state.milestones.find(m=>m.status==='IN_PROGRESS')?.id||'');const [attachments,setAttachments]=useState<AttachmentRef[]>([]);const [uploading,setUploading]=useState(false);
- async function upload(files:FileList|null){if(!files)return;setUploading(true);try{const refs:AttachmentRef[]=[];for(const f of Array.from(files)){const fd=new FormData();fd.append('file',f);const r=await fetch('/api/attachments',{method:'POST',body:fd});if(!r.ok)throw new Error((await r.json()).error);refs.push((await r.json()).attachment);}setAttachments(x=>[...x,...refs]);}finally{setUploading(false)}}
- function submit(e:React.FormEvent){e.preventDefault();const n=Number(amount);const t:Transaction={id:crypto.randomUUID(),createdAt:new Date().toISOString(),transactionDate:new Date(date+'T12:00:00').toISOString(),type,amount:n,sourceAccountId:source||undefined,destinationAccountId:dest||undefined,fundingSourceId:funding||undefined,milestoneId:milestone||undefined,category:category||undefined,payee:payee||undefined,description:desc||undefined,attachments};onSave(t);}
- const needsSource=['EXPENSE','TRANSFER','ADVANCE'].includes(type); const needsDest=['FUNDING_IN','TRANSFER','REFUND'].includes(type); return <div className="stack"><div className="pageTitle"><h1>Add transaction</h1><p>Money movement and actual cost stay separate.</p></div><form className="panel form" onSubmit={submit}><label>Type<select value={type} onChange={e=>setType(e.target.value as TxType)}><option value="EXPENSE">Expense</option><option value="TRANSFER">Transfer (not expense)</option><option value="FUNDING_IN">Funding received</option><option value="ADVANCE">Advance paid</option><option value="ADVANCE_ADJUSTMENT">Adjust advance to expense</option><option value="REFUND">Refund</option><option value="DIRECT_FUNDED_EXPENSE">Lender paid expense directly</option></select></label><div className="grid2"><label>Amount<input required inputMode="decimal" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0"/></label><label>Date<input required type="date" value={date} onChange={e=>setDate(e.target.value)}/></label></div>{needsSource&&<label>From account<select required value={source} onChange={e=>setSource(e.target.value)}><option value="">Choose…</option>{state.accounts.filter(a=>a.active).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{needsDest&&<label>To account<select required value={dest} onChange={e=>setDest(e.target.value)}><option value="">Choose…</option>{state.accounts.filter(a=>a.active).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>}{['FUNDING_IN','DIRECT_FUNDED_EXPENSE'].includes(type)&&<label>Funding source<select value={funding} onChange={e=>setFunding(e.target.value)}><option value="">Choose…</option>{state.fundingSources.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>}<label>Milestone<select value={milestone} onChange={e=>setMilestone(e.target.value)}><option value="">None</option>{state.milestones.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</select></label><div className="grid2"><label>Category<input value={category} onChange={e=>setCategory(e.target.value)} placeholder="Steel / Registry / Seller Payment"/></label><label>Payee / Vendor<input value={payee} onChange={e=>setPayee(e.target.value)} placeholder="Name"/></label></div><label>Description<textarea value={desc} onChange={e=>setDesc(e.target.value)} placeholder="What was this payment for?"/></label><label>Bill / photo / PDF<input type="file" accept="image/*,application/pdf" multiple onChange={e=>upload(e.target.files)}/></label>{uploading&&<small>Uploading evidence…</small>}{attachments.length>0&&<div className="chips">{attachments.map(a=><span key={a.pathname}>{a.name}</span>)}</div>}<button className="primary" disabled={uploading}>Save transaction</button></form></div> }
+      if (stateResponse.status === 401 || txResponse.status === 401) {
+        setBackendError('');
+        setAuth('no');
+        return;
+      }
+      if (!stateResponse.ok || !txResponse.ok) {
+        const response = stateResponse.ok ? txResponse : stateResponse;
+        const detail = await response.json().catch(() => ({ error: 'Backend unavailable' }));
+        throw new Error(detail.error || 'Backend unavailable');
+      }
 
-function Ledger({state,txs}:{state:ProjectState;txs:Transaction[]}){ const [q,setQ]=useState(''); const accountName=(id?:string)=>state.accounts.find(a=>a.id===id)?.name||''; const rows=[...txs].reverse().filter(t=>JSON.stringify(t).toLowerCase().includes(q.toLowerCase())); return <div className="stack"><div className="pageTitle"><h1>Ledger</h1><p>Immutable money trail.</p></div><input className="search" value={q} onChange={e=>setQ(e.target.value)} placeholder="Search category, payee, amount…"/><section className="panel ledger">{!rows.length&&<p className="muted">No transactions yet.</p>}{rows.map(t=><article key={t.id}><div className={'txIcon '+t.type.toLowerCase()}>{t.type==='EXPENSE'?'−':t.type==='FUNDING_IN'?'+':t.type==='TRANSFER'?'↔':'•'}</div><div className="grow"><b>{t.category||t.type.replaceAll('_',' ')}</b><small>{new Date(t.transactionDate).toLocaleDateString('en-IN')} · {t.payee||t.description||accountName(t.sourceAccountId)+(t.destinationAccountId?' → '+accountName(t.destinationAccountId):'')}</small>{t.attachments?.length?<div className="chips">{t.attachments.map(a=><a key={a.pathname} href={`/api/attachments?path=${encodeURIComponent(a.pathname)}`} target="_blank">{a.name}</a>)}</div>:null}</div><strong className={t.type==='FUNDING_IN'?'positive':''}>{money(t.amount)}</strong></article>)}</section></div> }
+      const sj = await stateResponse.json();
+      const tj = await txResponse.json();
+      setState(sj.state);
+      setTxs(tj.transactions);
+      writeSnapshot(sj.state, tj.transactions);
+      setBackendError('');
+      setAuth('yes');
+    } catch (e) {
+      const cached = readSnapshot();
+      if (cached) {
+        setState(cached.state);
+        setTxs(cached.txs);
+        setAuth('yes');
+        setBackendError('Offline snapshot loaded. Changes will sync when the connection returns.');
+      } else {
+        setBackendError(e instanceof Error ? e.message : 'Backend unavailable');
+        setAuth('yes');
+      }
+    }
+  }, []);
 
-function More({state,save,reload}:{state:ProjectState;save:(s:ProjectState)=>void;reload:()=>void}){ const [draft,setDraft]=useState<ProjectState>(structuredClone(state)); const [restore,setRestore]=useState<File|null>(null); useEffect(()=>setDraft(structuredClone(state)),[state]); const addAccount=()=>setDraft(x=>({...x,accounts:[...x.accounts,{id:crypto.randomUUID(),name:'New Account',type:'BANK',openingBalance:0,active:true}]})); const addFunding=()=>setDraft(x=>({...x,fundingSources:[...x.fundingSources,{id:crypto.randomUUID(),name:'New Funding Source',type:'OTHER',committedAmount:0}]})); async function doRestore(){if(!restore)return;const b=JSON.parse(await restore.text());const r=await fetch('/api/restore',{method:'POST',headers:{'Content-Type':'application/json','x-confirm-restore':'RESTORE'},body:JSON.stringify(b)});if(!r.ok)alert((await r.json()).error);else reload();}
- return <div className="stack"><div className="pageTitle"><h1>Project & Backup</h1><p>Configuration, accounts and disaster recovery.</p></div><section className="panel form"><h2>Property</h2><label>Project name<input value={draft.project.name} onChange={e=>setDraft({...draft,project:{...draft.project,name:e.target.value}})}/></label><label>Property address<textarea value={draft.project.propertyAddress} onChange={e=>setDraft({...draft,project:{...draft.project,propertyAddress:e.target.value}})}/></label><div className="grid2"><label>Plot area (gaj)<input inputMode="decimal" value={draft.project.plotAreaSqYard} onChange={e=>setDraft({...draft,project:{...draft.project,plotAreaSqYard:Number(e.target.value)}})}/></label><label>Agreed purchase price<input inputMode="decimal" value={draft.project.agreedPurchasePrice} onChange={e=>setDraft({...draft,project:{...draft.project,agreedPurchasePrice:Number(e.target.value)}})}/></label></div><div className="grid2"><label>Registered owner<input value={draft.project.ownerName} onChange={e=>setDraft({...draft,project:{...draft.project,ownerName:e.target.value}})}/></label><label>Seller<input value={draft.project.sellerName} onChange={e=>setDraft({...draft,project:{...draft.project,sellerName:e.target.value}})}/></label></div><h2>Accounts</h2>{draft.accounts.map((a,i)=><div className="editRow" key={a.id}><input value={a.name} onChange={e=>{const z=[...draft.accounts];z[i]={...a,name:e.target.value};setDraft({...draft,accounts:z})}}/><select value={a.type} onChange={e=>{const z=[...draft.accounts];z[i]={...a,type:e.target.value as any};setDraft({...draft,accounts:z})}}><option>BANK</option><option>CASH</option><option>OTHER</option></select><input inputMode="decimal" value={a.openingBalance} onChange={e=>{const z=[...draft.accounts];z[i]={...a,openingBalance:Number(e.target.value)};setDraft({...draft,accounts:z})}}/></div>)}<button type="button" className="secondary" onClick={addAccount}>+ Account</button><h2>Funding commitments</h2>{draft.fundingSources.map((f,i)=><div className="editRow" key={f.id}><input value={f.name} onChange={e=>{const z=[...draft.fundingSources];z[i]={...f,name:e.target.value};setDraft({...draft,fundingSources:z})}}/><input inputMode="decimal" value={f.committedAmount} onChange={e=>{const z=[...draft.fundingSources];z[i]={...f,committedAmount:Number(e.target.value)};setDraft({...draft,fundingSources:z})}}/></div>)}<button type="button" className="secondary" onClick={addFunding}>+ Funding source</button><button className="primary" onClick={()=>save(draft)}>Save project settings</button></section><section className="panel"><h2>Backup & recovery</h2><p className="muted">Download a complete JSON backup regularly. Restore replaces cloud project data.</p><a className="button secondary" href="/api/backup">Download full backup</a><div className="restore"><input type="file" accept="application/json" onChange={e=>setRestore(e.target.files?.[0]||null)}/><button className="danger" disabled={!restore} onClick={doRestore}>Restore backup</button></div></section><section className="panel"><button className="secondary" onClick={async()=>{await fetch('/api/auth/logout',{method:'POST'});location.reload()}}>Lock app</button></section></div> }
+  const flush = useCallback(async () => {
+    if (!navigator.onLine) return;
+
+    const pendingState = localStorage.getItem(PENDING_STATE);
+    if (pendingState) {
+      try {
+        const response = await fetch('/api/state', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: pendingState,
+        });
+        if (response.ok) localStorage.removeItem(PENDING_STATE);
+      } catch {
+        return;
+      }
+    }
+
+    const q = readTxQueue();
+    if (!q.length) {
+      await load();
+      return;
+    }
+
+    const keep: Transaction[] = [];
+    for (const t of q) {
+      try {
+        const response = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...t, allowDuplicate: true }),
+        });
+        if (!response.ok && response.status !== 409) keep.push(t);
+      } catch {
+        keep.push(t);
+      }
+    }
+    writeTxQueue(keep);
+    await load();
+  }, [load]);
+
+  useEffect(() => {
+    load();
+    setOnline(navigator.onLine);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const on = () => { setOnline(true); flush(); };
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, [load, flush]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(''), 3500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const summary = useMemo(() => (state ? computeLedger(state.accounts, txs) : null), [state, txs]);
+
+  async function login(e: React.FormEvent) {
+    e.preventDefault();
+    setLoginErr('');
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    if (response.ok) {
+      setPin('');
+      await load();
+    } else {
+      setLoginErr((await response.json().catch(() => ({}))).error || 'Login failed');
+    }
+  }
+
+  async function saveState(next: ProjectState) {
+    setBusy(true);
+    setState(next);
+    writeSnapshot(next, txs);
+    try {
+      const response = await fetch('/api/state', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(next),
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Save failed');
+      const body = await response.json();
+      setState(body.state);
+      writeSnapshot(body.state, txs);
+      localStorage.removeItem(PENDING_STATE);
+      setToast('Project saved');
+    } catch (e) {
+      localStorage.setItem(PENDING_STATE, JSON.stringify(next));
+      setToast(navigator.onLine ? 'Saved locally; cloud sync will retry' : 'Saved offline; cloud sync will retry');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function postTx(t: Transaction) {
+    setBusy(true);
+    try {
+      let response = await fetch('/api/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(t),
+      });
+
+      if (response.status === 409) {
+        const detail = await response.json().catch(() => ({}));
+        const proceed = window.confirm(
+          `${detail.error || 'Possible duplicate transaction.'}\n\nSave it anyway?`
+        );
+        if (!proceed) return;
+        response = await fetch('/api/transactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...t, allowDuplicate: true }),
+        });
+      }
+
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Save failed');
+      const body = await response.json();
+      const next = [...txs.filter((x) => x.id !== body.transaction.id), body.transaction]
+        .sort((a, b) => a.transactionDate.localeCompare(b.transactionDate));
+      setTxs(next);
+      if (state) writeSnapshot(state, next);
+      setToast('Transaction saved');
+      setTab('ledger');
+    } catch (e) {
+      if (!navigator.onLine || e instanceof TypeError) {
+        const q = readTxQueue();
+        if (!q.some((x) => x.id === t.id)) q.push(t);
+        writeTxQueue(q);
+        const next = [...txs.filter((x) => x.id !== t.id), t];
+        setTxs(next);
+        if (state) writeSnapshot(state, next);
+        setToast('Saved offline; will sync automatically');
+        setTab('ledger');
+      } else {
+        setToast(e instanceof Error ? e.message : 'Save failed');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function voidTx(id: string) {
+    if (!navigator.onLine) {
+      setToast('Voiding requires an online connection.');
+      return;
+    }
+    if (!window.confirm('Create a correcting reversal for this transaction? The original record will remain in the audit trail.')) return;
+    setBusy(true);
+    try {
+      const response = await fetch('/api/transactions/void', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'Void failed');
+      await load();
+      setToast('Correcting reversal created');
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Void failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (auth === 'loading') {
+    return <div className="center"><div className="spinner" /><p>Opening Plot to Ghar…</p></div>;
+  }
+
+  if (auth === 'no') {
+    return (
+      <main className="login">
+        <section className="loginCard">
+          <div className="brandMark">🏠</div>
+          <h1>Plot to Ghar</h1>
+          <p>Private property & construction ledger</p>
+          <form onSubmit={login}>
+            <label>
+              Access PIN
+              <input type="password" inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value)} autoFocus />
+            </label>
+            {loginErr ? <div className="error">{loginErr}</div> : null}
+            <button className="primary">Unlock</button>
+          </form>
+        </section>
+      </main>
+    );
+  }
+
+  if (backendError && !state) {
+    return (
+      <main className="login">
+        <section className="loginCard">
+          <div className="brandMark">⚙️</div>
+          <h1>Backend unavailable</h1>
+          <p>{backendError}</p>
+          <button className="primary" onClick={load}>Retry connection</button>
+          <button className="secondary" onClick={async () => { await fetch('/api/auth/logout', { method: 'POST' }); location.reload(); }}>Lock app</button>
+        </section>
+      </main>
+    );
+  }
+
+  if (!state || !summary) return null;
+
+  return (
+    <div className="app">
+      <header>
+        <div>
+          <strong>{state.project.name}</strong>
+          <small>{state.project.status.replaceAll('_', ' ')}</small>
+        </div>
+        <span className={online ? 'online' : 'offline'}>{online ? '● Online' : '● Offline'}</span>
+      </header>
+
+      {backendError ? <div className="syncBanner">{backendError}</div> : null}
+
+      <main className="content">
+        {tab === 'home' ? <Home state={state} txs={txs} /> : null}
+        {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
+        {tab === 'add' ? <AddTransaction state={state} txs={txs} onSave={postTx} /> : null}
+        {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} /> : null}
+        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={load} /> : null}
+      </main>
+
+      <nav>
+        {(['home', 'journey', 'add', 'ledger', 'more'] as Tab[]).map((x) => (
+          <button key={x} onClick={() => setTab(x)} className={tab === x ? 'active' : ''}>
+            <span>{x === 'home' ? '⌂' : x === 'journey' ? '◉' : x === 'add' ? '+' : x === 'ledger' ? '☷' : '•••'}</span>
+            {x === 'add' ? 'Add' : x[0].toUpperCase() + x.slice(1)}
+          </button>
+        ))}
+      </nav>
+
+      {busy ? <div className="busy">Working…</div> : null}
+      {toast ? <div className="toast">{toast}</div> : null}
+    </div>
+  );
+}

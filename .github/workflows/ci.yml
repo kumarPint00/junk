@@ -2,17 +2,23 @@ name: Plot to Ghar Web CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, plot-to-ghar-production-ready]
     paths:
       - 'plot-to-ghar/web/**'
+      - 'plot-to-ghar/android/**'
       - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
     paths:
       - 'plot-to-ghar/web/**'
+      - 'plot-to-ghar/android/**'
 
 permissions:
   contents: read
+
+concurrency:
+  group: plot-to-ghar-web-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -21,16 +27,24 @@ jobs:
     defaults:
       run:
         working-directory: plot-to-ghar/web
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Financial integrity tests
+
+      - name: Financial and security tests
         run: npm test
+
       - name: TypeScript
         run: npm run typecheck
+
       - name: Production build
         run: npm run build
+
+      - name: Critical production dependency audit
+        run: npm audit --omit=dev --audit-level=critical

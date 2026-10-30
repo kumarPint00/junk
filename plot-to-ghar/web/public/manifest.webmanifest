@@ -1,9 +1,21 @@
 {
   "name": "Plot to Ghar",
   "short_name": "PlotToGhar",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#0b1220",
-  "theme_color": "#0b1220",
-  "description": "Property purchase and construction finance manager"
+  "orientation": "portrait-primary",
+  "background_color": "#07101e",
+  "theme_color": "#07101e",
+  "description": "Private plot purchase and building construction finance manager",
+  "categories": ["finance", "productivity"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
