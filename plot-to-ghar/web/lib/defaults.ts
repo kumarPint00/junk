@@ -92,6 +92,7 @@ export function defaultState(): ProjectState {
       },
     ],
     cashReconciliations: [],
+    financialAllocations: [],
     construction: {
       floors: [
         { id: 'floor-ground', name: 'Ground Floor · Shops + Parking', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
@@ -136,6 +137,7 @@ export function normalizeState(input?: Partial<ProjectState> | null): ProjectSta
     contractors: Array.isArray(input.contractors) ? input.contractors : [],
     loans: Array.isArray(input.loans) && input.loans.length ? input.loans : base.loans,
     cashReconciliations: Array.isArray(input.cashReconciliations) ? input.cashReconciliations : [],
+    financialAllocations: Array.isArray(input.financialAllocations) ? input.financialAllocations : [],
     construction: {
       floors: Array.isArray(input.construction?.floors) ? input.construction.floors : base.construction.floors,
       schedule: Array.isArray(input.construction?.schedule) ? input.construction.schedule : [],
@@ -191,6 +193,15 @@ export function validateProjectState(state: ProjectState) {
   for (const a of state.construction.agreements) {
     if (!a.title.trim() || !a.scope.trim() || !Number.isFinite(a.value) || a.value < 0) throw new Error('Invalid contractor agreement.');
     if (!state.contractors.some((c) => c.id === a.contractorId)) throw new Error('Agreement contractor not found.');
+  }
+  if (state.financialAllocations.length > 100000) throw new Error('Too many financial allocation records.');
+  for (const a of state.financialAllocations) {
+    if (!a.id || !a.transactionId || !a.createdAt || !a.reason.trim() || a.reason.trim().length < 8 ||
+      !['ACQUISITION','CONSTRUCTION','OTHER'].includes(a.costBucket)) {
+      throw new Error('Invalid financial classification correction.');
+    }
+    if (a.floorId && !state.construction.floors.some((f)=>f.id===a.floorId)) throw new Error('Financial allocation floor missing.');
+    if (a.phaseId && !state.phases.some((p)=>p.id===a.phaseId)) throw new Error('Financial allocation phase missing.');
   }
   for (const item of state.construction.stockItems) {
     if (!item.name.trim() || !item.unit.trim() || !Number.isFinite(item.reorderLevel) || item.reorderLevel < 0) throw new Error('Invalid inventory item.');
@@ -256,6 +267,16 @@ export function validateStateTransition(previous: ProjectState, next: ProjectSta
   }
   unchanged(previous.construction.progress, next.construction.progress, 'Progress');
   unchanged(previous.cashReconciliations, next.cashReconciliations, 'Cash-count');
+  unchanged(previous.financialAllocations, next.financialAllocations, 'Financial allocation');
+  const oldAllocIds = new Set(previous.financialAllocations.map((a)=>a.id));
+  for (const a of next.financialAllocations) {
+    if (oldAllocIds.has(a.id)) continue;
+    const original = transactions.find((t)=>t.id===a.transactionId);
+    if (!original || !['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT'].includes(original.type)) {
+      throw new Error('Financial reclassification must reference an original expense.');
+    }
+    if (transactions.some((t)=>t.reversalOf===original.id)) throw new Error('Cannot reclassify a reversed expense.');
+  }
 
   const agreementIdsInLedger = new Set(transactions.map((t)=>t.agreementId).filter(Boolean));
   for (const before of previous.construction.agreements) {
