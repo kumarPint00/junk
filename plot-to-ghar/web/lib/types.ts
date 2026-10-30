@@ -221,6 +221,7 @@ export type Transaction = {
   fundingSourceId?: string;
   milestoneId?: string;
   phaseId?: string;
+  floorId?: string;
   vendorId?: string;
   contractorId?: string;
   costBucket?: CostBucket;
@@ -253,6 +254,8 @@ export type LedgerSummary = {
   unallocatedLoanRepayments: number;
   accountBalances: Record<string, number>;
   phaseSpend: Record<string, number>;
+  floorSpend: Record<string, number>;
+  unallocatedConstructionCost: number;
   categorySpend: Record<string, number>;
   monthlySpend: Record<string, number>;
   txCount: number;
