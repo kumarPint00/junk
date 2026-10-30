@@ -404,7 +404,9 @@ export function AppShell() {
           return;
         }
 
-        const type = reversalType(old.type);
+        const existingSettlements = transactions.filter((x) => x.linkedTransactionId === old.id && ['REFUND', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(x.type));
+    if (existingSettlements.length) throw new Error('This entry has linked settlements or refunds; reverse them through dedicated correcting entries before voiding.');
+    const type = reversalType(old.type);
         const reversal: Transaction = {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
@@ -424,11 +426,11 @@ export function AppShell() {
           vendorId: old.vendorId,
           contractorId: old.contractorId,
           costBucket: old.costBucket,
-          category: `Reversal: ${old.category || old.type}`,
+          category: old.category,
           payee: old.payee,
           description: `Void/reversal of ${old.id}`,
           reversalOf: old.id,
-          linkedTransactionId: old.type === 'ADVANCE' ? old.id : undefined,
+          linkedTransactionId: old.type === 'ADVANCE' || old.type === 'EXPENSE' ? old.id : undefined,
         };
         validateTx(reversal, { state, transactions: txs });
         await putLocalTransaction(reversal);
