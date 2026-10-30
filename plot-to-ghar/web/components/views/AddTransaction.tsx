@@ -32,28 +32,30 @@ export function AddTransaction({
   txs,
   onSave,
   mode,
+  prefill,
 }: {
   state: ProjectState;
   txs: Transaction[];
   onSave: (t: Transaction) => Promise<void>;
   mode: 'cloud' | 'standalone';
+  prefill?: { amount: string; date: string; payee: string; description: string; attachment?: AttachmentRef };
 }) {
   const [type, setType] = useState<TxType>('EXPENSE');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(prefill?.amount || '');
   const [source, setSource] = useState('');
   const [dest, setDest] = useState('');
   const [funding, setFunding] = useState('');
   const [category, setCategory] = useState('');
-  const [payee, setPayee] = useState('');
-  const [description, setDescription] = useState('');
+  const [payee, setPayee] = useState(prefill?.payee || '');
+  const [description, setDescription] = useState(prefill?.description || '');
   const [referenceNumber, setReferenceNumber] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [milestoneId, setMilestoneId] = useState(state.milestones.find((m) => m.status === 'IN_PROGRESS')?.id || '');
   const [phaseId, setPhaseId] = useState(state.phases.find((p) => p.status === 'IN_PROGRESS')?.id || '');
   const [vendorId, setVendorId] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [costBucket, setCostBucket] = useState<'ACQUISITION' | 'CONSTRUCTION' | 'OTHER'>('CONSTRUCTION');
-  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
+  const [attachments, setAttachments] = useState<AttachmentRef[]>(prefill?.attachment ? [prefill.attachment] : []);
   const [items, setItems] = useState<LineItem[]>([]);
   const [linkedTransactionId, setLinkedTransactionId] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -173,6 +175,7 @@ export function AddTransaction({
   return (
     <div className="stack">
       <PageTitle title="Add Transaction" description="Transfers, funding, advances and actual cost are accounted separately." />
+      {prefill ? <p className="warning">OCR prepared this draft. Verify amount, date, vendor, payment account and the receipt before saving. Nothing has been posted yet.</p> : null}
       <form className="panel form" onSubmit={submit}>
         <label>
           Transaction type
