@@ -357,3 +357,22 @@ input[type="range"]{accent-color:#19ad7d}
 .estimateResult span{font-size:11px;color:#72859a}.estimateResult b{font-size:21px;letter-spacing:-.04em;color:#158b68}
 .materialStockRow{flex-wrap:wrap}.materialStockRow .secondary{min-height:32px}
 @media(max-width:600px){.estimateModes{grid-template-columns:repeat(2,minmax(0,1fr))}.estimateResultGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.estimateResult{padding:11px}.estimateResult b{font-size:18px}}
+
+/* Forecast chart and schedule timeline */
+.cashForecastGraph{border:1px solid var(--line);background:linear-gradient(#fcfefd,#f8fafc);border-radius:15px;padding:18px 16px;margin-top:18px}
+.cashGraphColumns{display:flex;align-items:flex-end;justify-content:space-around;gap:9px;min-height:172px;border-bottom:1px solid #e1e9f0}
+.cashGraphColumn{flex:1;min-width:0;text-align:center;display:flex;flex-direction:column;align-items:center;gap:5px}
+.cashGraphBars{display:flex;gap:6px;align-items:flex-end;justify-content:center;width:100%;height:132px}
+.cashGraphBars>div{width:min(35%,38px);min-width:6px;border-radius:6px 6px 0 0}
+.cashGraphIn{background:linear-gradient(#32d7a2,#0d9c72)}
+.cashGraphOut{background:linear-gradient(#66a0f6,#2f71ec)}
+.cashGraphColumn small{font-size:10px;color:var(--muted)}
+.cashGraphColumn>span{font-size:9px;font-weight:650;min-height:20px;color:#4c8b79}
+.forecastRecord{padding:11px 14px}
+.forecastRecord .row{padding:5px 0;font-size:11px}
+.scheduleRecord{margin-left:20px;position:relative}
+.scheduleRecord:before{content:'';position:absolute;left:-28px;top:20px;width:11px;height:11px;background:#42c99d;border:3px solid #dcf8eb;border-radius:50%;box-shadow:0 0 0 1px #bce4d5}
+.scheduleRecord:after{content:'';position:absolute;left:-23px;top:34px;height:calc(100% + 14px);border-left:2px dashed #cfe8dd}
+.scheduleRecord:last-of-type:after{display:none}
+.scheduleRecord>.sectionHead{align-items:center}
+@media(max-width:600px){.cashForecastGraph{padding:12px 9px}.cashGraphColumns{gap:2px}.cashGraphBars{gap:3px}.cashGraphColumn>span{font-size:8px}.scheduleRecord{margin-left:15px}}
