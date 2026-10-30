@@ -1,154 +1,144 @@
-import type { Account, LedgerSummary, ProjectState, Transaction, TxType } from './types';
+import type { Account, CostBucket, LedgerSummary, ProjectState, Transaction, TxType } from './types';
 
-const txTypes: TxType[] = [
-  'FUNDING_IN',
-  'TRANSFER',
-  'EXPENSE',
-  'ADVANCE',
-  'ADVANCE_ADJUSTMENT',
-  'ADVANCE_REFUND',
-  'REFUND',
-  'DIRECT_FUNDED_EXPENSE',
-  'LOAN_REPAYMENT',
-];
+// Use integral paise for all ledger additions/subtractions to avoid JS float drift.
+const paise = (n: number) => Math.round(Number(n) * 100);
+const rupees = (n: number) => n / 100;
+const isMoney = (n: number) => Number.isFinite(n) && n > 0 && n <= 1_000_000_000 && Math.abs(n * 100 - Math.round(n * 100)) < 0.00001;
+const types: TxType[] = ['FUNDING_IN', 'TRANSFER', 'EXPENSE', 'ADVANCE', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND', 'REFUND', 'DIRECT_FUNDED_EXPENSE', 'LOAN_REPAYMENT', 'REVERSAL'];
 
-function add(map: Record<string, number>, key: string | undefined, amount: number) {
-  if (!key) return;
-  map[key] = (map[key] || 0) + amount;
+function accumulate(map: Record<string, number>, key: string | undefined, value: number) {
+  if (key) map[key] = (map[key] || 0) + value;
 }
-
-function costDelta(t: Transaction) {
-  if (t.type === 'EXPENSE' || t.type === 'DIRECT_FUNDED_EXPENSE' || t.type === 'ADVANCE_ADJUSTMENT') return t.amount;
-  if (t.type === 'REFUND') return -t.amount;
-  return 0;
+function moneyBucket(t: Transaction, lookup: Map<string, Transaction>): CostBucket {
+  if (t.type === 'REFUND' && t.linkedTransactionId) {
+    return lookup.get(t.linkedTransactionId)?.costBucket || t.costBucket || 'OTHER';
+  }
+  return t.costBucket || 'OTHER';
+}
+function costDelta(t: Transaction, sign: number) {
+  return (t.type === 'EXPENSE' || t.type === 'DIRECT_FUNDED_EXPENSE' || t.type === 'ADVANCE_ADJUSTMENT' ? 1 : t.type === 'REFUND' ? -1 : 0) * sign * paise(t.amount);
 }
 
 export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSummary {
   const balances: Record<string, number> = {};
-  for (const a of accounts) balances[a.id] = Number(a.openingBalance || 0);
+  for (const a of accounts) balances[a.id] = paise(Number(a.openingBalance || 0));
+  let projectCost = 0, acquisitionCost = 0, constructionCost = 0, otherCost = 0;
+  let fundingReceived = 0, advancesOutstanding = 0, loanRepayments = 0;
+  const phaseSpend: Record<string, number> = {}, categorySpend: Record<string, number> = {}, monthlySpend: Record<string, number> = {};
+  const receivedBySource: Record<string, number> = {}, advanceById: Record<string, number> = {};
+  const integrityWarnings: string[] = [];
+  const lookup = new Map(txs.map((t) => [t.id, t]));
+  const reversed = new Set(txs.filter((t) => t.reversalOf).map((t) => t.reversalOf));
+  const seen = new Set<string>();
 
-  let projectCost = 0;
-  let acquisitionCost = 0;
-  let constructionCost = 0;
-  let otherCost = 0;
-  let fundingReceived = 0;
-  let advancesOutstanding = 0;
-  let loanRepayments = 0;
-  const phaseSpend: Record<string, number> = {};
-  const categorySpend: Record<string, number> = {};
-  const monthlySpend: Record<string, number> = {};
+  const apply = (t: Transaction, sign: number) => {
+    const n = paise(t.amount) * sign;
+    const debit = () => accumulate(balances, t.sourceAccountId, -n);
+    const credit = () => accumulate(balances, t.destinationAccountId, n);
+    switch (t.type) {
+      case 'FUNDING_IN': credit(); fundingReceived += n; accumulate(receivedBySource, t.fundingSourceId, n); break;
+      case 'TRANSFER': debit(); credit(); break;
+      case 'EXPENSE': debit(); break;
+      case 'DIRECT_FUNDED_EXPENSE': fundingReceived += n; accumulate(receivedBySource, t.fundingSourceId, n); break;
+      case 'ADVANCE': debit(); advancesOutstanding += n; accumulate(advanceById, t.id, n); break;
+      case 'ADVANCE_ADJUSTMENT': advancesOutstanding -= n; accumulate(advanceById, t.linkedTransactionId, -n); break;
+      case 'ADVANCE_REFUND': credit(); advancesOutstanding -= n; accumulate(advanceById, t.linkedTransactionId, -n); break;
+      case 'REFUND': credit(); break;
+      case 'LOAN_REPAYMENT': debit(); loanRepayments += n; break;
+      case 'REVERSAL': return;
+    }
+    const delta = costDelta(t, sign);
+    if (!delta) return;
+    projectCost += delta;
+    const bucket = moneyBucket(t, lookup);
+    if (bucket === 'ACQUISITION') acquisitionCost += delta;
+    else if (bucket === 'CONSTRUCTION') constructionCost += delta;
+    else otherCost += delta;
+    const linked = t.type === 'REFUND' ? lookup.get(t.linkedTransactionId || '') : null;
+    accumulate(phaseSpend, linked?.phaseId || t.phaseId, delta);
+    accumulate(categorySpend, linked?.category || t.category || 'Uncategorized', delta);
+    accumulate(monthlySpend, String(t.transactionDate || '').slice(0, 7) || 'Unknown', delta);
+  };
 
   for (const t of txs) {
-    const n = Number(t.amount || 0);
-    switch (t.type) {
-      case 'FUNDING_IN':
-        if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
-        fundingReceived += n;
-        break;
-      case 'TRANSFER':
-        if (t.sourceAccountId) balances[t.sourceAccountId] = (balances[t.sourceAccountId] || 0) - n;
-        if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
-        break;
-      case 'EXPENSE':
-        if (t.sourceAccountId) balances[t.sourceAccountId] = (balances[t.sourceAccountId] || 0) - n;
-        break;
-      case 'DIRECT_FUNDED_EXPENSE':
-        fundingReceived += n;
-        break;
-      case 'ADVANCE':
-        if (t.sourceAccountId) balances[t.sourceAccountId] = (balances[t.sourceAccountId] || 0) - n;
-        advancesOutstanding += n;
-        break;
-      case 'ADVANCE_ADJUSTMENT':
-        advancesOutstanding -= n;
-        break;
-      case 'ADVANCE_REFUND':
-        if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
-        advancesOutstanding -= n;
-        break;
-      case 'REFUND':
-        if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
-        break;
-      case 'LOAN_REPAYMENT':
-        if (t.sourceAccountId) balances[t.sourceAccountId] = (balances[t.sourceAccountId] || 0) - n;
-        loanRepayments += n;
-        break;
-    }
-
-    const delta = costDelta(t);
-    if (delta) {
-      projectCost += delta;
-      if (t.costBucket === 'ACQUISITION') acquisitionCost += delta;
-      else if (t.costBucket === 'CONSTRUCTION') constructionCost += delta;
-      else otherCost += delta;
-      add(phaseSpend, t.phaseId, delta);
-      add(categorySpend, t.category || 'Uncategorized', delta);
-      const month = String(t.transactionDate || '').slice(0, 7);
-      add(monthlySpend, month || 'Unknown', delta);
+    if (seen.has(t.id)) { integrityWarnings.push('Duplicate transaction ID: ' + t.id); continue; }
+    seen.add(t.id);
+    if (t.type === 'REVERSAL') {
+      const original = lookup.get(t.reversalOf || '');
+      if (original && original.type !== 'REVERSAL') apply(original, -1);
+      else integrityWarnings.push('Reversal has missing original: ' + t.id);
+    } else {
+      apply(t, 1);
+      if (t.type === 'REFUND' && !t.linkedTransactionId && !t.reversalOf) {
+        integrityWarnings.push('Refund without linked expense: ' + t.id);
+      }
     }
   }
-
+  for (const [id, amount] of Object.entries(advanceById)) {
+    if (amount < -1) integrityWarnings.push('Over-settled contractor advance: ' + id);
+  }
+  for (const a of accounts) {
+    if ((balances[a.id] || 0) < -1) integrityWarnings.push('Negative account balance: ' + a.name);
+  }
+  const convert = (m: Record<string, number>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, rupees(v)]));
   return {
-    projectCost,
-    acquisitionCost,
-    constructionCost,
-    otherCost,
-    fundingReceived,
-    advancesOutstanding: Math.max(0, advancesOutstanding),
-    loanRepayments,
-    accountBalances: balances,
-    phaseSpend,
-    categorySpend,
-    monthlySpend,
+    projectCost: rupees(projectCost),
+    acquisitionCost: rupees(acquisitionCost),
+    constructionCost: rupees(constructionCost),
+    otherCost: rupees(otherCost),
+    fundingReceived: rupees(fundingReceived),
+    advancesOutstanding: rupees(advancesOutstanding),
+    loanRepayments: rupees(loanRepayments),
+    accountBalances: convert(balances),
+    phaseSpend: convert(phaseSpend),
+    categorySpend: convert(categorySpend),
+    monthlySpend: convert(monthlySpend),
     txCount: txs.length,
+    receivedBySource: convert(receivedBySource),
+    advanceById: convert(advanceById),
+    integrityWarnings,
+    reversedCount: reversed.size,
   };
 }
 
-export type ValidationContext = {
-  state?: ProjectState;
-  transactions?: Transaction[];
-};
-
-function checkId(list: { id: string }[] | undefined, id: string | undefined, label: string) {
-  if (id && list && !list.some((x) => x.id === id)) throw new Error(`${label} no longer exists.`);
+export type ValidationContext = { state?: ProjectState; transactions?: Transaction[] };
+function checkId(rows: { id: string }[] | undefined, id: string | undefined, label: string) {
+  if (id && rows && !rows.some((x) => x.id === id)) throw new Error(label + ' does not exist.');
+}
+function notReversed(originalId: string, transactions: Transaction[]) {
+  return !transactions.some((x) => x.reversalOf === originalId);
+}
+function remainingAdvance(id: string, txs: Transaction[]) {
+  const a = txs.find((t) => t.id === id && t.type === 'ADVANCE');
+  if (!a || !notReversed(id, txs)) throw new Error('Linked advance is missing or reversed.');
+  const used = txs.filter((t) => (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') && t.linkedTransactionId === id && notReversed(t.id, txs))
+    .reduce((sum, t) => sum + paise(t.amount), 0);
+  return { a, available: paise(a.amount) - used };
+}
+function remainingRefundable(id: string, txs: Transaction[]) {
+  const original = txs.find((t) => t.id === id && ['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE_ADJUSTMENT'].includes(t.type));
+  if (!original || !notReversed(id, txs)) throw new Error('Choose a valid, active expense to refund.');
+  const refunded = txs.filter((t) => t.type === 'REFUND' && t.linkedTransactionId === id && notReversed(t.id, txs))
+    .reduce((sum, t) => sum + paise(t.amount), 0);
+  return { original, available: paise(original.amount) - refunded };
 }
 
-function linkedAdvanceBalance(id: string, txs: Transaction[]) {
-  const advance = txs.find((x) => x.id === id && x.type === 'ADVANCE');
-  if (!advance) throw new Error('Linked advance is invalid.');
-  const settled = txs
-    .filter(
-      (x) =>
-        (x.type === 'ADVANCE_ADJUSTMENT' || x.type === 'ADVANCE_REFUND') &&
-        x.linkedTransactionId === advance.id
-    )
-    .reduce((sum, x) => sum + Number(x.amount || 0), 0);
-  return { advance, remaining: Number(advance.amount) - settled };
-}
-
-export function validateTx(t: Partial<Transaction>, context: ValidationContext = {}) {
-  const amount = Number(t.amount || 0);
-  if (!t.type || !txTypes.includes(t.type as TxType)) throw new Error('Invalid transaction type.');
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Amount must be greater than zero.');
-  if (amount > 1_000_000_000) throw new Error('Amount is outside the supported range.');
-
-  if (
-    t.type === 'TRANSFER' &&
-    (!t.sourceAccountId || !t.destinationAccountId || t.sourceAccountId === t.destinationAccountId)
-  ) {
-    throw new Error('Transfer requires two different accounts.');
+export function validateTx(t: Partial<Transaction>, { state, transactions = [] }: ValidationContext = {}) {
+  const n = Number(t.amount);
+  if (!t.type || !types.includes(t.type)) throw new Error('Invalid transaction type.');
+  if (!isMoney(n)) throw new Error('Amount must be positive and have at most two decimal places.');
+  if (t.id && (typeof t.id !== 'string' || t.id.length > 120)) throw new Error('Invalid transaction ID.');
+  const date = t.transactionDate;
+  if (!date || Number.isNaN(Date.parse(date))) throw new Error('Valid transaction date required.');
+  const sources = ['TRANSFER', 'EXPENSE', 'ADVANCE', 'LOAN_REPAYMENT'];
+  const dests = ['TRANSFER', 'FUNDING_IN', 'REFUND', 'ADVANCE_REFUND'];
+  if (sources.includes(t.type) && !t.sourceAccountId) throw new Error('Source account is required.');
+  if (dests.includes(t.type) && !t.destinationAccountId) throw new Error('Destination account is required.');
+  if (t.type === 'TRANSFER' && t.sourceAccountId === t.destinationAccountId) throw new Error('Transfer needs two different accounts.');
+  if (['FUNDING_IN', 'DIRECT_FUNDED_EXPENSE'].includes(t.type) && !t.fundingSourceId) throw new Error('Funding source is required.');
+  if (['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT','REFUND'].includes(t.type) && !['ACQUISITION','CONSTRUCTION','OTHER'].includes(t.costBucket || '')) {
+    throw new Error('Choose an acquisition, construction or other cost bucket.');
   }
-  if (['EXPENSE', 'ADVANCE', 'LOAN_REPAYMENT'].includes(t.type) && !t.sourceAccountId) {
-    throw new Error('Payment account is required.');
-  }
-  if (['FUNDING_IN', 'REFUND', 'ADVANCE_REFUND'].includes(t.type) && !t.destinationAccountId) {
-    throw new Error('Destination account is required.');
-  }
-  if (['FUNDING_IN', 'DIRECT_FUNDED_EXPENSE'].includes(t.type) && !t.fundingSourceId) {
-    throw new Error('Funding source is required.');
-  }
-
-  const state = context.state;
   checkId(state?.accounts, t.sourceAccountId, 'Source account');
   checkId(state?.accounts, t.destinationAccountId, 'Destination account');
   checkId(state?.fundingSources, t.fundingSourceId, 'Funding source');
@@ -157,50 +147,79 @@ export function validateTx(t: Partial<Transaction>, context: ValidationContext =
   checkId(state?.vendors, t.vendorId, 'Vendor');
   checkId(state?.contractors, t.contractorId, 'Contractor');
 
-  if (Array.isArray(t.lineItems) && t.lineItems.length) {
-    if (t.lineItems.length > 100) throw new Error('Too many line items.');
-    let total = 0;
-    for (const item of t.lineItems) {
-      const itemAmount = Number(item.amount || 0);
-      if (!item.description?.trim()) throw new Error('Each line item needs a description.');
-      if (!Number.isFinite(itemAmount) || itemAmount < 0) throw new Error('Invalid line-item amount.');
-      total += itemAmount;
+  if (t.type === 'REVERSAL') {
+    const original = transactions.find((x) => x.id === t.reversalOf);
+    if (!original || original.type === 'REVERSAL') throw new Error('A reversal must refer to an existing original transaction.');
+    if (!notReversed(original.id, transactions)) throw new Error('Transaction has already been reversed.');
+    if (paise(original.amount) !== paise(n)) throw new Error('Reversal amount must equal original amount.');
+    if (original.type === 'ADVANCE') {
+      const linked = transactions.some((x) => ['ADVANCE_ADJUSTMENT','ADVANCE_REFUND'].includes(x.type) && x.linkedTransactionId === original.id && notReversed(x.id, transactions));
+      if (linked) throw new Error('Reverse advance settlements before reversing the advance.');
     }
-    if (Math.abs(total - amount) > 0.01) throw new Error('Line-item total does not match transaction amount.');
+    if (['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT'].includes(original.type)) {
+      const hasRefund = transactions.some((x) => x.type === 'REFUND' && x.linkedTransactionId === original.id && notReversed(x.id, transactions));
+      if (hasRefund) throw new Error('Reverse linked expense refunds before reversing this expense.');
+    }
+    if (state?.construction.stockMovements.some((m) => m.transactionId === original.id)) {
+      throw new Error('The transaction is linked to stock movements. Reconcile the stock before reversal.');
+    }
+    return true;
+  }
+  if (t.reversalOf && t.type !== 'REVERSAL' && transactions.some((x) => x.reversalOf === t.reversalOf)) {
+    throw new Error('Transaction has already been reversed.');
   }
 
-  const txs = context.transactions || [];
   if (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') {
-    if (!t.linkedTransactionId) throw new Error('Select the advance being settled.');
-    const { remaining } = linkedAdvanceBalance(t.linkedTransactionId, txs);
-    if (amount > remaining + 0.01) throw new Error('This entry exceeds the linked advance balance.');
+    if (!t.linkedTransactionId) throw new Error('Choose the contractor advance to settle.');
+    const { a, available } = remainingAdvance(t.linkedTransactionId, transactions);
+    if (paise(n) > available) throw new Error('Settlement exceeds the remaining advance.');
+    if (t.contractorId && a.contractorId && t.contractorId !== a.contractorId) throw new Error('Advance belongs to a different contractor.');
+    if (t.type === 'ADVANCE_REFUND' && a.sourceAccountId !== t.destinationAccountId) {
+      throw new Error('Return the advance to the original payment account.');
+    }
   }
-  if (t.type === 'REFUND') {
-    const currentCost = computeLedger(state?.accounts || [], txs).projectCost;
-    if (amount > currentCost + 0.01) throw new Error('Refund cannot exceed the currently recognized project cost.');
+  if (t.type === 'REFUND' && !t.reversalOf) {
+    if (!t.linkedTransactionId) throw new Error('Link the expense being refunded.');
+    const { original, available } = remainingRefundable(t.linkedTransactionId, transactions);
+    if (paise(n) > available) throw new Error('Refund exceeds the original expense balance.');
+    if (original.costBucket && t.costBucket !== original.costBucket) throw new Error('Refund cost bucket must match the original expense.');
+    if (t.phaseId && original.phaseId && t.phaseId !== original.phaseId) throw new Error('Refund must use the original phase.');
+  }
+  if (t.type === 'REFUND' && t.reversalOf) {
+    // Backward-compatible historic reversals: previous versions used REFUND as
+    // a credit for an EXPENSE. New corrections always use REVERSAL.
+    if (!transactions.some((x) => x.id === t.reversalOf)) throw new Error('Original entry not found.');
   }
 
-  for (const value of [t.category, t.payee, t.referenceNumber, t.description, t.notes]) {
-    if (typeof value === 'string' && value.length > 1000) throw new Error('Transaction text is too long.');
+  if (t.lineItems?.length) {
+    if (t.lineItems.length > 100) throw new Error('Too many item lines.');
+    let sum = 0;
+    for (const item of t.lineItems) {
+      if (!item.description?.trim() || !isMoney(Number(item.amount))) throw new Error('Invalid material line or amount.');
+      if (item.quantity !== undefined && (!Number.isFinite(item.quantity) || item.quantity <= 0)) throw new Error('Quantity must be positive.');
+      if (item.rate !== undefined && (!Number.isFinite(item.rate) || item.rate < 0)) throw new Error('Rate must be non-negative.');
+      if (item.quantity !== undefined && item.rate !== undefined && Math.abs(paise(item.quantity * item.rate) - paise(item.amount)) > 1) throw new Error('Quantity × rate differs from line amount.');
+      sum += paise(item.amount);
+    }
+    if (sum !== paise(n)) throw new Error('Item line totals must match the transaction amount.');
   }
+
+  for (const v of [t.category, t.payee, t.referenceNumber, t.description, t.notes]) {
+    if (typeof v === 'string' && v.length > 1000) throw new Error('Transaction text is too long.');
+  }
+  return true;
 }
 
-function norm(v?: string) {
-  return String(v || '').trim().toLowerCase();
-}
-
-export function findPotentialDuplicate(candidate: Partial<Transaction>, txs: Transaction[]) {
-  const day = String(candidate.transactionDate || '').slice(0, 10);
-  const ref = norm(candidate.referenceNumber);
-  return txs.find((t) => {
-    if (candidate.id && t.id === candidate.id) return false;
-    if (ref && norm(t.referenceNumber) === ref) return true;
-    return (
-      t.type === candidate.type &&
-      Math.abs(Number(t.amount) - Number(candidate.amount)) < 0.01 &&
-      String(t.transactionDate).slice(0, 10) === day &&
-      norm(t.payee) === norm(candidate.payee) &&
-      norm(t.category) === norm(candidate.category)
-    );
+function normalize(v?: string) { return String(v || '').trim().toLowerCase(); }
+export function findPotentialDuplicate(t: Partial<Transaction>, rows: Transaction[]) {
+  if (t.type === 'REVERSAL') return undefined;
+  const day = String(t.transactionDate || '').slice(0, 10);
+  const ref = normalize(t.referenceNumber);
+  return rows.find((x) => {
+    if (x.id === t.id) return false;
+    if (ref && normalize(x.referenceNumber) === ref && x.type === t.type) return true;
+    return x.type === t.type && paise(x.amount) === paise(Number(t.amount || 0)) &&
+      String(x.transactionDate).slice(0, 10) === day && normalize(x.payee) === normalize(t.payee) &&
+      normalize(x.category) === normalize(t.category) && x.linkedTransactionId === t.linkedTransactionId;
   });
 }
