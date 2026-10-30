@@ -5,7 +5,7 @@ import type { AttachmentRef, ContractorAgreement, ConstructionSuite, ProgressEnt
 import { money } from '@/components/ui';
 import { emi, loanProjection, stockBalances, dueReminders } from '@/lib/construction-calcs';
 import { openEvidence, saveEvidence } from '@/lib/evidence';
-import { computeLedger } from '@/lib/ledger';
+import { computeLedger, agreementFinancials } from '@/lib/ledger';
 import type { SuiteProps, UpdateSuite } from './ConstructionHub';
 
 type ChildProps = SuiteProps & { patch: UpdateSuite };
@@ -107,6 +107,12 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
     } catch(e) { setError(e instanceof Error?e.message:'Cannot save agreement'); } finally {setWorking(false);}
   }
   async function change(id:string, status: ContractorAgreement['status']) {
+    const old = agreements.find((a)=>a.id===id);
+    if (!old) return;
+    if (old.status === 'CLOSED' || (old.status === 'SIGNED' && status === 'DRAFT')) {
+      setError('Signed or closed agreements must be amended, not silently changed.'); return;
+    }
+    if (status === 'SIGNED' && old.status === 'DRAFT' && !window.confirm('Confirm the actual agreement was signed by both parties? This locks the signed terms.')) return;
     await patch({ agreements: agreements.map((a)=>a.id===id ? {...a,status} : a) });
   }
 
@@ -116,14 +122,20 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
       <p className="muted">Agreed values are commitments only. Actual advances and payments must be recorded separately in the Ledger and linked to the contractor.</p>
       {!state.contractors.length && <div className="warning">Add contractors in More → Vendors & contractors before creating agreements.</div>}
       {agreements.map((a)=>{
-        const paid = txs.filter((t)=>t.contractorId===a.contractorId && ['EXPENSE','ADVANCE','ADVANCE_ADJUSTMENT'].includes(t.type)).reduce((v,t)=>v + (t.type==='ADVANCE_ADJUSTMENT' ? 0 : t.amount),0);
+        const finances = agreementFinancials(txs,a.id);
         return <div className="suiteRecord" key={a.id}>
           <div className="sectionHead"><b>{a.title}</b><span className="status">{a.status}</span></div>
           <small className="muted">{state.contractors.find((x)=>x.id===a.contractorId)?.name||'Contractor'} · {money(a.value)} · Max advance {money(a.advanceLimit)}</small>
           <p>{a.scope}</p><small className="muted">Terms: {a.paymentTerms||'Not recorded'} · Retention {a.retentionPercent}%</small>
-          <small className="muted">All recorded ledger payments to this contractor: {money(paid)} (across all agreements; not contract-specific)</small>
+          <div className="grid3">
+            <div><small>Cash paid</small><b>{money(finances.cashPaid)}</b></div>
+            <div><small>Recognized work</small><b>{money(finances.recognizedWork)}</b></div>
+            <div><small>Outstanding advance</small><b>{money(finances.openAdvance)}</b></div>
+          </div>
+          <small className="muted">Only ledger transactions explicitly linked to this agreement are counted. Older unassigned contractor payments remain unallocated.</small>
           <AttachmentLinks refs={a.attachments} />
-          <select aria-label={'Agreement status: '+a.title} value={a.status} onChange={(e)=>change(a.id,e.target.value as ContractorAgreement['status'])}><option value="DRAFT">Draft</option><option value="SIGNED">Signed (confirm actual signatures)</option><option value="CLOSED">Closed</option></select>
+          <select disabled={a.status === 'CLOSED'} aria-label={'Agreement status: '+a.title} value={a.status} onChange={(e)=>change(a.id,e.target.value as ContractorAgreement['status'])}><option value="DRAFT" disabled={a.status !== 'DRAFT'}>Draft</option><option value="SIGNED">Signed (confirm actual signatures)</option><option value="CLOSED">Closed</option></select>
+          <AgreementEditor agreement={a} agreements={agreements} patch={patch} mode={mode} state={state} />
         </div>;
       })}
     </section>
@@ -145,6 +157,64 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
       <button className="primary" disabled={working||!state.contractors.length} type="submit">{working?'Saving…':'Save agreement draft'}</button>
     </form>
   </div>;
+}
+
+function AgreementEditor({ agreement, agreements, patch, mode, state }: {
+  agreement: ContractorAgreement; agreements: ContractorAgreement[]; patch: UpdateSuite;
+  mode: 'cloud'|'standalone'; state:ProjectState;
+}) {
+  const [draft,setDraft] = useState<ContractorAgreement>(agreement);
+  const [file,setFile] = useState<File|null>(null);
+  const [error,setError] = useState('');const [busy,setBusy] = useState(false);
+  useEffect(()=>setDraft(agreement),[agreement]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setError('');
+    if (agreement.status !== 'DRAFT') {setError('Signed terms are locked. Use a draft amendment.');return;}
+    if (!draft.title.trim() || !draft.scope.trim() || !Number.isFinite(draft.value) || draft.value < 0 ||
+        !Number.isFinite(draft.advanceLimit) || draft.advanceLimit < 0 || draft.advanceLimit > draft.value ||
+        !Number.isFinite(draft.retentionPercent) || draft.retentionPercent < 0 || draft.retentionPercent > 100 ||
+        (draft.endDate && draft.startDate && draft.endDate < draft.startDate)) {
+      setError('Check scope, dates, payment limit, value and retention.');return;
+    }
+    setBusy(true);
+    try {
+      const attachments=[...draft.attachments];
+      if (file) attachments.push(await saveEvidence(file,mode));
+      await patch({agreements:agreements.map((a)=>a.id===agreement.id?{...draft,attachments}:a)});
+      setFile(null);setError('');
+    }catch(e){setError(e instanceof Error?e.message:'Could not update agreement');}finally{setBusy(false);}
+  }
+  async function amend() {
+    if (!window.confirm('Create a new DRAFT amendment linked to this signed agreement? Original signed terms stay unchanged.')) return;
+    await patch({agreements:[...agreements,{
+      ...agreement,id:crypto.randomUUID(),parentAgreementId:agreement.id,
+      title:'Amendment: '+agreement.title,status:'DRAFT',attachments:[],
+    }]});
+  }
+  if (agreement.status !== 'DRAFT') {
+    return <button className="secondary small" type="button" onClick={amend}>+ Create draft amendment</button>;
+  }
+  return <details className="editDetails"><summary>✎ Edit agreement draft</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      {agreement.parentAgreementId && <small className="muted">Amendment to: {agreement.parentAgreementId}</small>}
+      <label>Contractor<select value={draft.contractorId} onChange={(e)=>setDraft((s)=>({...s,contractorId:e.target.value}))}>
+        {state.contractors.map((c)=><option value={c.id} key={c.id}>{c.name}</option>)}
+      </select></label>
+      <label>Title<input required value={draft.title} onChange={(e)=>setDraft((s)=>({...s,title:e.target.value}))}/></label>
+      <label>Scope of work<textarea required value={draft.scope} onChange={(e)=>setDraft((s)=>({...s,scope:e.target.value}))}/></label>
+      <div className="grid3">
+        <label>Agreed ₹<input type="number" min="0" step="0.01" value={draft.value} onChange={(e)=>setDraft((s)=>({...s,value:Number(e.target.value)}))}/></label>
+        <label>Maximum advance ₹<input type="number" min="0" step="0.01" value={draft.advanceLimit} onChange={(e)=>setDraft((s)=>({...s,advanceLimit:Number(e.target.value)}))}/></label>
+        <label>Retention %<input type="number" min="0" max="100" value={draft.retentionPercent} onChange={(e)=>setDraft((s)=>({...s,retentionPercent:Number(e.target.value)}))}/></label>
+        <label>Start<input type="date" value={draft.startDate||''} onChange={(e)=>setDraft((s)=>({...s,startDate:e.target.value}))}/></label>
+        <label>Finish<input type="date" value={draft.endDate||''} onChange={(e)=>setDraft((s)=>({...s,endDate:e.target.value}))}/></label>
+      </div>
+      <label>Milestone payment terms<textarea value={draft.paymentTerms} onChange={(e)=>setDraft((s)=>({...s,paymentTerms:e.target.value}))}/></label>
+      <label>Add quotation / signed paper (8 MB max)<input type="file" accept="image/*,application/pdf" onChange={(e)=>setFile(e.target.files?.[0]||null)}/></label>
+      <AttachmentLinks refs={draft.attachments} />
+      <ErrorLine message={error}/><button className="primary" type="submit" disabled={busy}>{busy?'Saving…':'Save draft changes'}</button>
+    </form>
+  </details>;
 }
 
 export function ProgressView({state,patch,mode}:ChildProps) {
