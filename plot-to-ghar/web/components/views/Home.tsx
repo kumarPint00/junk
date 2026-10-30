@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, Bell, BookOpen, Building2, CalendarDays,
-  Camera, CheckCircle2, ChevronRight, CircleAlert, ClipboardList, FileCheck2,
+  Camera, CheckCircle2, ChevronRight, CircleAlert, ClipboardList, FileCheck2, Calculator,
   FileText, HardHat, House, Landmark, Layers3, Package, Pencil, Plus,
   Receipt, ScanLine, ShieldCheck, TrendingUp, Wallet, Wrench
 } from 'lucide-react';
@@ -86,7 +86,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
 
   const menu: Array<{ label: string; desc: string; Icon: LucideIcon; tint: string; section: Section; feature?: string; detail: string }> = [
     { label: 'Floor plans', desc: 'Budgets and areas', Icon: Layers3, tint: 'mint', section: 'build', feature: 'floors', detail: state.construction.floors.length + ' zones' },
-    { label: 'Materials', desc: 'Estimate & inventory', Icon: Package, tint: 'orange', section: 'build', feature: 'materials', detail: totalItems + ' items' },
+    { label: 'Materials', desc: 'Inventory and stock', Icon: Package, tint: 'orange', section: 'build', feature: 'materials', detail: totalItems + ' items' },
     { label: 'Schedule', desc: 'Plan and track tasks', Icon: CalendarDays, tint: 'violet', section: 'build', feature: 'schedule', detail: activeSchedules + ' active' },
     { label: 'Expenses', desc: 'Bills and payments', Icon: Receipt, tint: 'coral', section: 'add', detail: 'New entry' },
     { label: 'Contractors', desc: 'Contracts & advances', Icon: HardHat, tint: 'amber', section: 'build', feature: 'agreements', detail: state.construction.agreements.length + ' contracts' },
@@ -96,7 +96,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
     { label: 'Progress', desc: 'Site photo diary', Icon: Camera, tint: 'rose', section: 'build', feature: 'progress', detail: state.construction.progress.length + ' updates' },
     { label: 'Reminders', desc: 'Due dates and alerts', Icon: Bell, tint: 'yellow', section: 'build', feature: 'reminders', detail: due.length + ' due' },
     { label: 'Receipt scanner', desc: 'Read bills with OCR', Icon: ScanLine, tint: 'sky', section: 'build', feature: 'ocr', detail: 'Review before save' },
-    { label: 'Property journey', desc: 'Registry to finishing', Icon: BookOpen, tint: 'slate', section: 'journey', detail: completedMilestones + '/' + milestonesCount + ' steps' },
+    { label: 'Estimator', desc: 'Slab, wall, plaster, tiles', Icon: Calculator, tint: 'slate', section: 'build', feature: 'estimate', detail: '4 work types' },
   ];
 
   return <div className="stack dashboardPage">
