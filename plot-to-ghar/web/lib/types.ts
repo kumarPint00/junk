@@ -7,7 +7,8 @@ export type TxType =
   | 'ADVANCE_REFUND'
   | 'REFUND'
   | 'DIRECT_FUNDED_EXPENSE'
-  | 'LOAN_REPAYMENT';
+  | 'LOAN_REPAYMENT'
+  | 'REVERSAL';
 
 export type CostBucket = 'ACQUISITION' | 'CONSTRUCTION' | 'OTHER';
 
@@ -246,4 +247,8 @@ export type LedgerSummary = {
   categorySpend: Record<string, number>;
   monthlySpend: Record<string, number>;
   txCount: number;
+  receivedBySource: Record<string, number>;
+  advanceById: Record<string, number>;
+  integrityWarnings: string[];
+  reversedCount: number;
 };
