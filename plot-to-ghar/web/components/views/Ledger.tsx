@@ -26,11 +26,13 @@ export function Ledger({
   const [q, setQ] = useState('');
   const [type, setType] = useState<'ALL' | TxType>('ALL');
   const [phase, setPhase] = useState('ALL');
+  const [floor, setFloor] = useState('ALL');
   const summary = useMemo(() => computeLedger(state.accounts, txs), [state.accounts, txs]);
 
   const reversed = useMemo(() => new Set(txs.map((t) => t.reversalOf).filter(Boolean)), [txs]);
   const accountName = (id?: string) => state.accounts.find((a) => a.id === id)?.name || '';
   const phaseName = (id?: string) => state.phases.find((p) => p.id === id)?.name || '';
+  const floorName = (id?: string) => state.construction.floors.find((p) => p.id === id)?.name || '';
   const vendorName = (id?: string) => state.vendors.find((p) => p.id === id)?.name || '';
   const contractorName = (id?: string) => state.contractors.find((p) => p.id === id)?.name || '';
 
@@ -38,10 +40,11 @@ export function Ledger({
     .reverse()
     .filter((t) => type === 'ALL' || t.type === type)
     .filter((t) => phase === 'ALL' || t.phaseId === phase)
+    .filter((t) => floor === 'ALL' || t.floorId === floor)
     .filter((t) => JSON.stringify(t).toLowerCase().includes(q.toLowerCase()));
 
   function exportCsv() {
-    const header = ['Date', 'Type', 'Cost bucket', 'Category', 'Payee', 'Phase', 'Amount', 'From', 'To', 'Reference'];
+    const header = ['Date', 'Type', 'Cost bucket', 'Category', 'Payee', 'Phase', 'Floor', 'Amount', 'From', 'To', 'Reference'];
     const lines = [
       header.map(csvCell).join(','),
       ...[...txs].map((t) =>
@@ -52,6 +55,7 @@ export function Ledger({
           t.category || '',
           t.payee || vendorName(t.vendorId) || contractorName(t.contractorId),
           phaseName(t.phaseId),
+          floorName(t.floorId),
           t.amount,
           accountName(t.sourceAccountId),
           accountName(t.destinationAccountId),
@@ -107,6 +111,10 @@ export function Ledger({
           <option value="ALL">All phases</option>
           {state.phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+        <select value={floor} onChange={(e)=>setFloor(e.target.value)}>
+          <option value="ALL">All floors</option>
+          {state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}
+        </select>
         <button className="secondary small" onClick={exportCsv}>Export CSV</button>
       </div>
 
@@ -135,6 +143,7 @@ export function Ledger({
                   {new Date(t.transactionDate).toLocaleDateString('en-IN')}
                   {context ? ' · ' + context : ''}
                   {phaseName(t.phaseId) ? ' · ' + phaseName(t.phaseId) : ''}
+                  {floorName(t.floorId) ? ' · ' + floorName(t.floorId) : ''}
                 </small>
                 {t.description ? <p className="txDescription">{t.description}</p> : null}
                 {t.lineItems?.length ? (
