@@ -5,6 +5,7 @@ import type { AttachmentRef, ContractorAgreement, ConstructionSuite, ProgressEnt
 import { money } from '@/components/ui';
 import { emi, loanProjection, stockBalances, dueReminders } from '@/lib/construction-calcs';
 import { openEvidence, saveEvidence } from '@/lib/evidence';
+import { computeLedger } from '@/lib/ledger';
 import type { SuiteProps, UpdateSuite } from './ConstructionHub';
 
 type ChildProps = SuiteProps & { patch: UpdateSuite };
@@ -200,20 +201,23 @@ export function FinanceView({state,txs}:ChildProps){
   const [tenure,setTenure]=useState(String(loan?.tenureMonths||240));
   const [extra,setExtra]=useState('50000');
   const [monthly,setMonthly]=useState('0');
+  const [monthlyEmi,setMonthlyEmi]=useState(String(loan?.emiAmount || 0));
+  const [semiannual,setSemiannual]=useState('0');
   const p=validNumber(principal);
   const r=validNumber(rate);
   const n=validNumber(tenure,1);
   const loanCalc=useMemo(()=>loanProjection(Number.isFinite(p)?p:0,Number.isFinite(r)?r:0,Number.isFinite(n)?n:0,validNumber(extra)||0),[p,r,n,extra]);
-  const startingCash=Object.values((awaitlessBalances(state,txs))).reduce((a,b)=>a+b,0);
+  const startingCash=Object.values(computeLedger(state.accounts,txs).accountBalances).reduce((a,b)=>a+b,0);
   let projectedCash=startingCash;
   const baseMonth=new Date();baseMonth.setDate(1);
   const forecast=Array.from({length:6},(_,i)=>{
     const d=new Date(baseMonth.getFullYear(),baseMonth.getMonth()+i,1);
     const key=d.toISOString().slice(0,7);
     const planned=state.construction.schedule.filter((t)=>t.status!=='COMPLETED' && t.endDate.slice(0,7)===key).reduce((s,t)=>s+t.estimatedCost,0);
-    const inflow=validNumber(monthly)||0;
-    projectedCash+=inflow-planned;
-    return {key,planned,inflow,balance:projectedCash};
+    const inflow=(validNumber(monthly)||0) + ((i+1)%6===0 ? (validNumber(semiannual)||0) : 0);
+    const emiOutflow=validNumber(monthlyEmi)||0;
+    projectedCash+=inflow-planned-emiOutflow;
+    return {key,planned,inflow,emiOutflow,balance:projectedCash};
   });
   return <div className="stack">
     <section className="panel">
@@ -236,24 +240,22 @@ export function FinanceView({state,txs}:ChildProps){
     </section>
     <section className="panel">
       <h2>Six-month construction cash forecast</h2>
-      <p className="muted">Starts with balances of tracked project accounts. Only planned task costs are deducted; loan instalments and household expenses are not automatically included.</p>
+      <p className="muted">Starts with balances of tracked project accounts. Planned task costs and your entered future monthly EMI are deducted. Household expenses and unconfirmed loan disbursements are not included.</p>
       <div className="row"><span>Recorded available project funds</span><b>{money(startingCash)}</b></div>
-      <label>Expected fresh contributions each month ₹<input type="number" min="0" value={monthly} onChange={(e)=>setMonthly(e.target.value)}/></label>
+      <div className="grid3">
+      <label>New contributions per month ₹<input type="number" min="0" value={monthly} onChange={(e)=>setMonthly(e.target.value)}/></label>
+      <label>Monthly EMI cash outflow ₹<input type="number" min="0" value={monthlyEmi} onChange={(e)=>setMonthlyEmi(e.target.value)}/></label>
+      <label>Extra funding in month 6 ₹<input type="number" min="0" value={semiannual} onChange={(e)=>setSemiannual(e.target.value)}/></label>
+      </div>
       {forecast.map((x)=><div className="suiteRecord" key={x.key}>
         <b>{x.key}</b><div className="row"><small>Planned work</small><b>{money(x.planned)}</b></div>
+        <div className="row"><small>Expected contribution</small><b>{money(x.inflow)}</b></div>
+        <div className="row"><small>EMI outflow</small><b>{money(x.emiOutflow)}</b></div>
         <div className="row"><small>Projected end cash</small><b className={x.balance<0?'negativeStock':''}>{money(x.balance)}</b></div>
       </div>)}
       {forecast.some((x)=>x.balance<0) && <p className="warning">Funding shortfall projected. Revise the schedule or record confirmed funding, but never assume an undisbursed loan is available cash.</p>}
     </section>
   </div>;
-}
-function awaitlessBalances(state:ProjectState,txs:Transaction[]){
-  const b:Record<string,number>=Object.fromEntries(state.accounts.map((a)=>[a.id,a.openingBalance]));
-  for(const t of txs) {
-    if(t.type==='FUNDING_IN'||t.type==='REFUND'||t.type==='ADVANCE_REFUND'||t.type==='TRANSFER') {if(t.destinationAccountId)b[t.destinationAccountId]=(b[t.destinationAccountId]||0)+t.amount;}
-    if(['EXPENSE','ADVANCE','LOAN_REPAYMENT','TRANSFER'].includes(t.type)&&t.sourceAccountId)b[t.sourceAccountId]=(b[t.sourceAccountId]||0)-t.amount;
-  }
-  return b;
 }
 
 export function RemindersView({state,patch}:ChildProps){
