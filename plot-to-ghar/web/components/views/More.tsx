@@ -34,7 +34,7 @@ export function More({
     fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then(setHealth).catch(() => setHealth({ ok: false }));
   }, []);
 
-  const summary = useMemo(() => computeLedger(state.accounts, txs), [state.accounts, txs]);
+  const summary = useMemo(() => computeLedger(state.accounts, txs, state.financialAllocations), [state.accounts, state.financialAllocations, txs]);
   const systemCash = cashAccount ? summary.accountBalances[cashAccount] || 0 : 0;
   const usedAccountIds = new Set(txs.flatMap((t) => [t.sourceAccountId,t.destinationAccountId]).filter(Boolean));
 
