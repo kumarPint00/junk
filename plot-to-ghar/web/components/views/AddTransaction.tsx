@@ -61,6 +61,13 @@ export function AddTransaction({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
+  const refundableExpenses = useMemo(() => txs
+    .filter(t => ['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE_ADJUSTMENT'].includes(t.type) && !t.reversalOf && !txs.some(x => x.reversalOf === t.id))
+    .map(expense => {
+      const refunded = txs.filter(t => t.type === 'REFUND' && t.linkedTransactionId === expense.id).reduce((sum,t)=>sum+t.amount,0);
+      return { expense, remaining: expense.amount - refunded };
+    }).filter(x => x.remaining > 0.01), [txs]);
+
   const openAdvances = useMemo(() => {
     return txs
       .filter((t) => t.type === 'ADVANCE')
@@ -124,6 +131,19 @@ export function AddTransaction({
     });
   }
 
+  function selectRefund(id: string) {
+    setLinkedTransactionId(id);
+    const expense = refundableExpenses.find(x => x.expense.id === id)?.expense;
+    if (expense) {
+      setCostBucket(expense.costBucket || 'OTHER');
+      setPhaseId(expense.phaseId || '');
+      setCategory(expense.category || '');
+      setPayee(expense.payee || '');
+      setVendorId(expense.vendorId || '');
+      setContractorId(expense.contractorId || '');
+    }
+  }
+
   function selectAdvance(id: string) {
     setLinkedTransactionId(id);
     const found = openAdvances.find((x) => x.advance.id === id)?.advance;
@@ -142,6 +162,11 @@ export function AddTransaction({
       setError('Enter a valid amount.');
       return;
     }
+    if (type === 'REFUND' && !linkedTransactionId) {
+      setError('Choose the original expense to refund.'); return;
+    }
+    const origin = type === 'REFUND' ? refundableExpenses.find(x => x.expense.id === linkedTransactionId)?.expense : undefined;
+    if (type === 'REFUND' && !origin) { setError('Original expense not found or already refunded.'); return; }
     const tx: Transaction = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
@@ -151,12 +176,12 @@ export function AddTransaction({
       sourceAccountId: source || undefined,
       destinationAccountId: dest || undefined,
       fundingSourceId: funding || undefined,
-      milestoneId: milestoneId || undefined,
-      phaseId: phaseId || undefined,
-      vendorId: vendorId || undefined,
-      contractorId: contractorId || undefined,
-      costBucket,
-      category: category.trim() || undefined,
+      milestoneId: origin ? origin.milestoneId : milestoneId || undefined,
+      phaseId: origin ? origin.phaseId : phaseId || undefined,
+      vendorId: origin ? origin.vendorId : vendorId || undefined,
+      contractorId: origin ? origin.contractorId : contractorId || undefined,
+      costBucket: origin ? origin.costBucket : costBucket,
+      category: origin ? origin.category : category.trim() || undefined,
       payee: payee.trim() || undefined,
       referenceNumber: referenceNumber.trim() || undefined,
       description: description.trim() || undefined,
@@ -243,6 +268,17 @@ export function AddTransaction({
             </select>
           </label>
         ) : null}
+
+        {type === 'REFUND' ? <label>
+          Original expense being refunded
+          <select required value={linkedTransactionId} onChange={(e) => selectRefund(e.target.value)}>
+            <option value="">Choose paid expense…</option>
+            {refundableExpenses.map(({ expense, remaining }) => <option key={expense.id} value={expense.id}>
+              {String(expense.transactionDate).slice(0,10)} · {expense.payee || expense.category || 'Expense'} · {money(remaining)} refundable
+            </option>)}
+          </select>
+          <small>Refund inherits cost bucket, phase and category from the original entry.</small>
+        </label> : null}
 
         {settlesAdvance ? (
           <label>

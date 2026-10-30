@@ -404,7 +404,9 @@ export function AppShell() {
           return;
         }
 
-        const type = reversalType(old.type);
+        const existingSettlements = txs.filter((x) => x.linkedTransactionId === old.id && ['REFUND', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(x.type));
+    if (existingSettlements.length) throw new Error('This entry has linked settlements or refunds; reverse them through dedicated correcting entries before voiding.');
+    const type = reversalType(old.type);
         const reversal: Transaction = {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
@@ -424,11 +426,11 @@ export function AppShell() {
           vendorId: old.vendorId,
           contractorId: old.contractorId,
           costBucket: old.costBucket,
-          category: `Reversal: ${old.category || old.type}`,
+          category: old.category,
           payee: old.payee,
           description: `Void/reversal of ${old.id}`,
           reversalOf: old.id,
-          linkedTransactionId: old.type === 'ADVANCE' ? old.id : undefined,
+          linkedTransactionId: old.type === 'ADVANCE' || old.type === 'EXPENSE' ? old.id : undefined,
         };
         validateTx(reversal, { state, transactions: txs });
         await putLocalTransaction(reversal);
@@ -543,7 +545,7 @@ export function AppShell() {
       ) : null}
 
       <main className="content">
-        {tab === 'home' ? <Home state={state} txs={txs} /> : null}
+        {tab === 'home' ? <Home state={state} txs={txs} save={saveState} openSection={setTab} /> : null}
         {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
         {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}

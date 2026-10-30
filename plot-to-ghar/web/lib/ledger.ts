@@ -148,6 +148,7 @@ export function validateTx(t: Partial<Transaction>, context: ValidationContext =
     throw new Error('Funding source is required.');
   }
 
+  if (!t.transactionDate || !Number.isFinite(Date.parse(t.transactionDate))) throw new Error('A valid transaction date is required.');
   const state = context.state;
   checkId(state?.accounts, t.sourceAccountId, 'Source account');
   checkId(state?.accounts, t.destinationAccountId, 'Destination account');
@@ -172,12 +173,28 @@ export function validateTx(t: Partial<Transaction>, context: ValidationContext =
   const txs = context.transactions || [];
   if (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') {
     if (!t.linkedTransactionId) throw new Error('Select the advance being settled.');
-    const { remaining } = linkedAdvanceBalance(t.linkedTransactionId, txs);
+    const { advance, remaining } = linkedAdvanceBalance(t.linkedTransactionId, txs);
+    if (t.type === 'ADVANCE_REFUND' && t.destinationAccountId !== advance.sourceAccountId) {
+      throw new Error('Return an advance to its original paying account.');
+    }
     if (amount > remaining + 0.01) throw new Error('This entry exceeds the linked advance balance.');
   }
   if (t.type === 'REFUND') {
-    const currentCost = computeLedger(state?.accounts || [], txs).projectCost;
-    if (amount > currentCost + 0.01) throw new Error('Refund cannot exceed the currently recognized project cost.');
+    if (!t.linkedTransactionId) throw new Error('Choose the original expense being refunded.');
+    const expense = txs.find(x => x.id === t.linkedTransactionId && ['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT'].includes(x.type));
+    if (!expense) throw new Error('Refund must reference an existing recognized expense.');
+    const returned = txs.filter(x => x.type === 'REFUND' && x.linkedTransactionId === expense.id)
+      .reduce((sum, x) => sum + Number(x.amount), 0);
+    if (amount > expense.amount - returned + 0.01) throw new Error('Refund exceeds the remaining refundable amount.');
+    if (t.costBucket !== expense.costBucket || t.phaseId !== expense.phaseId || t.category !== expense.category) {
+      throw new Error('Refund cost bucket, phase and category must match the original expense.');
+    }
+  }
+  if (t.reversalOf) {
+    if (txs.some(x => x.reversalOf === t.reversalOf)) throw new Error('This transaction is already reversed.');
+    const original = txs.find(x => x.id === t.reversalOf);
+    if (!original) throw new Error('Cannot reverse a missing transaction.');
+    if (Math.abs(original.amount - amount) > 0.01) throw new Error('A reversal must match its original amount.');
   }
 
   for (const value of [t.category, t.payee, t.referenceNumber, t.description, t.notes]) {
@@ -194,7 +211,7 @@ export function findPotentialDuplicate(candidate: Partial<Transaction>, txs: Tra
   const ref = norm(candidate.referenceNumber);
   return txs.find((t) => {
     if (candidate.id && t.id === candidate.id) return false;
-    if (ref && norm(t.referenceNumber) === ref) return true;
+    if (ref && candidate.type === t.type && norm(t.referenceNumber) === ref && norm(t.payee) === norm(candidate.payee)) return true;
     return (
       t.type === candidate.type &&
       Math.abs(Number(t.amount) - Number(candidate.amount)) < 0.01 &&
