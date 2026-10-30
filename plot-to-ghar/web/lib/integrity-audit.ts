@@ -31,7 +31,7 @@ export function auditIntegrity(state: ProjectState, txs: Transaction[]): Integri
   const keys = new Map<string, string>();
   for (const t of txs) {
     if (t.reversalOf || reversed.has(t.id)) continue;
-    const key = [t.type,String(t.transactionDate).slice(0,10),t.amount.toFixed(2),(t.payee||'').trim().toLowerCase(),(t.referenceNumber||'').trim().toLowerCase()].join('|');
+    const key = [t.type,String(t.transactionDate).slice(0,10),Number(t.amount || 0).toFixed(2),(t.payee||'').trim().toLowerCase(),(t.referenceNumber||'').trim().toLowerCase()].join('|');
     if(keys.has(key)) issues.push({code:'POSSIBLE_DUPLICATE',severity:'WARNING',transactionId:t.id,message:'Possible duplicate ledger entry. Compare the invoice and earlier transaction.'});
     else keys.set(key,t.id);
   }
