@@ -41,13 +41,13 @@ export async function POST(req: Request) {
       }
     }
 
+    const { allowDuplicate: _allowDuplicate, ...payload } = body;
     const t: Transaction = {
-      ...body,
-      allowDuplicate: undefined,
-      id: body.id || crypto.randomUUID(),
+      ...payload,
+      id: payload.id || crypto.randomUUID(),
       createdAt: new Date().toISOString(),
-      transactionDate: body.transactionDate || new Date().toISOString(),
-      amount: Number(body.amount),
+      transactionDate: payload.transactionDate || new Date().toISOString(),
+      amount: Number(payload.amount),
     };
     await putTransaction(t);
     return NextResponse.json(
