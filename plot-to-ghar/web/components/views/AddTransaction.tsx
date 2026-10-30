@@ -58,6 +58,7 @@ export function AddTransaction({
   const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [milestoneId, setMilestoneId] = useState(state.milestones.find((m) => m.status === 'IN_PROGRESS')?.id || '');
   const [phaseId, setPhaseId] = useState(state.phases.find((p) => p.status === 'IN_PROGRESS')?.id || '');
+  const [floorId, setFloorId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [costBucket, setCostBucket] = useState<'ACQUISITION' | 'CONSTRUCTION' | 'OTHER'>('CONSTRUCTION');
@@ -136,6 +137,7 @@ export function AddTransaction({
     if (!original) return;
     setCostBucket(original.costBucket || 'OTHER');
     setPhaseId(original.phaseId || '');
+    setFloorId(original.floorId || '');
     setMilestoneId(original.milestoneId || '');
     setCategory(original.category || 'Expense refund');
     setPayee(original.payee || '');
@@ -164,6 +166,9 @@ export function AddTransaction({
       phaseId: type === 'REFUND' && linkedTransactionId
         ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.phaseId
         : phaseId || undefined,
+      floorId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.floorId
+        : floorId || undefined,
       vendorId: vendorId || undefined,
       contractorId: contractorId || undefined,
       costBucket: type === 'REFUND' && linkedTransactionId
@@ -353,6 +358,14 @@ export function AddTransaction({
           </label>
         </div>
 
+        {['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE', 'ADVANCE_ADJUSTMENT', 'REFUND'].includes(type) ? (
+          <label>Floor / construction zone (for accurate floor budgets)
+            <select value={floorId} disabled={type === 'REFUND'} onChange={(e) => setFloorId(e.target.value)}>
+              <option value="">Shared / not assigned</option>
+              {state.construction.floors.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <div className="grid2">
           <label>
             Vendor
