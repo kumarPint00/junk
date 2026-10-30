@@ -521,7 +521,7 @@ export function AppShell() {
         {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
         {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} /> : null}
-        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} /> : null}
+        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} onNavigate={setTab} /> : null}
       </main>
 
       <nav>
