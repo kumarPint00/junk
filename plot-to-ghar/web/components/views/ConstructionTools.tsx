@@ -247,7 +247,7 @@ export function FinanceView({state,txs}:ChildProps){
     </section>
   </div>;
 }
-function awaitlessBalances(state:ProjectState,txs:Transaction){
+function awaitlessBalances(state:ProjectState,txs:Transaction[]){
   const b:Record<string,number>=Object.fromEntries(state.accounts.map((a)=>[a.id,a.openingBalance]));
   for(const t of txs) {
     if(t.type==='FUNDING_IN'||t.type==='REFUND'||t.type==='ADVANCE_REFUND'||t.type==='TRANSFER') {if(t.destinationAccountId)b[t.destinationAccountId]=(b[t.destinationAccountId]||0)+t.amount;}
