@@ -203,7 +203,7 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const summary = useMemo(() => (state ? computeLedger(state.accounts, txs) : null), [state, txs]);
+  const summary = useMemo(() => (state ? computeLedger(state.accounts, txs, state.financialAllocations) : null), [state, txs]);
 
   // Foreground browser reminder notifications. No background push claim: browsers may
   // suspend this page when closed. Android native notifications need a separate bridge.
