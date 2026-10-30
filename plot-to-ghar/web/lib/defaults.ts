@@ -1,4 +1,4 @@
-import type { ConstructionPhase, ProjectState } from './types';
+import type { ConstructionPhase, ProjectState, Transaction } from './types';
 
 const milestoneNames = [
   'Plot Locked',
@@ -51,7 +51,7 @@ function defaultPhases(): ConstructionPhase[] {
 
 export function defaultState(): ProjectState {
   return {
-    version: 3,
+    version: 4,
     revision: 1,
     project: {
       name: 'C-19 Plot to Home',
@@ -163,6 +163,14 @@ export function validateProjectState(state: ProjectState) {
     if (!a.name?.trim()) throw new Error('Every account needs a name.');
     if (!Number.isFinite(Number(a.openingBalance))) throw new Error('Invalid opening balance.');
   }
+  for (const f of state.fundingSources) {
+    if (!f.id || !f.name.trim() || !Number.isFinite(f.committedAmount) || f.committedAmount < 0) throw new Error('Invalid funding commitment.');
+  }
+  if (!Number.isFinite(state.project.plotAreaSqYard) || state.project.plotAreaSqYard <= 0) throw new Error('Plot area must be positive.');
+  if (!Number.isFinite(state.project.agreedPurchasePrice) || state.project.agreedPurchasePrice < 0) throw new Error('Agreed purchase price cannot be negative.');
+  for (const loan of state.loans) {
+    if (!loan.lenderName.trim() || [loan.sanctionedAmount,loan.purchaseComponent,loan.constructionComponent].some((n)=>!Number.isFinite(n)||n<0)) throw new Error('Invalid loan facility.');
+  }
   for (const floor of state.construction.floors) {
     if (!floor.id || !floor.name.trim() || !Number.isFinite(floor.areaSqFt) || floor.areaSqFt < 0) throw new Error('Invalid floor area.');
     if (!Number.isFinite(floor.budgetAmount) || floor.budgetAmount < 0) throw new Error('Invalid floor budget.');
@@ -188,4 +196,34 @@ export function validateProjectState(state: ProjectState) {
     if (!Number.isFinite(Number(p.budgetAmount)) || Number(p.budgetAmount) < 0) throw new Error('Invalid phase budget.');
   }
   return state;
+}
+
+/**
+ * Editable planning details are not the financial ledger.
+ * Changing an opening balance after posting money creates phantom cash, so
+ * changes to previously used accounts must be posted as explicit ledger entries.
+ */
+export function validateStateTransition(previous: ProjectState, next: ProjectState, transactions: Transaction[]) {
+  const usedAccountIds = new Set(transactions.flatMap((t) => [t.sourceAccountId, t.destinationAccountId]).filter(Boolean));
+  const usedSourceIds = new Set(transactions.map((t) => t.fundingSourceId).filter(Boolean));
+  for (const prior of previous.accounts) {
+    const updated = next.accounts.find((a) => a.id === prior.id);
+    if (!updated && usedAccountIds.has(prior.id)) throw new Error('Cannot delete an account with transactions: ' + prior.name);
+    if (!updated) continue;
+    if (usedAccountIds.has(prior.id) && Math.round(updated.openingBalance * 100) !== Math.round(prior.openingBalance * 100)) {
+      throw new Error('Opening balance for ' + prior.name + ' is locked after the first transaction. Use Add → audited balance correction.');
+    }
+  }
+  for (const prior of previous.fundingSources) {
+    const updated = next.fundingSources.find((f) => f.id === prior.id);
+    if (!updated && usedSourceIds.has(prior.id)) throw new Error('Cannot remove a funding source already used in ledger.');
+    if (updated && updated.type !== prior.type && usedSourceIds.has(prior.id)) {
+      throw new Error('Cannot change an already-used funding source type.');
+    }
+  }
+  const knownPhases = new Set(next.phases.map((p) => p.id));
+  for (const t of transactions) {
+    if (t.phaseId && !knownPhases.has(t.phaseId)) throw new Error('Cannot delete a phase used by the ledger.');
+  }
+  return next;
 }
