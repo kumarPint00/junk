@@ -7,7 +7,9 @@ export type TxType =
   | 'ADVANCE_REFUND'
   | 'REFUND'
   | 'DIRECT_FUNDED_EXPENSE'
-  | 'LOAN_REPAYMENT';
+  | 'LOAN_REPAYMENT'
+  | 'REVERSAL'
+  | 'BALANCE_ADJUSTMENT';
 
 export type CostBucket = 'ACQUISITION' | 'CONSTRUCTION' | 'OTHER';
 
@@ -108,6 +110,7 @@ export type WorkTask = {
 export type ContractorAgreement = {
   id: string;
   contractorId: string;
+  parentAgreementId?: string;
   title: string;
   scope: string;
   value: number;
@@ -122,11 +125,13 @@ export type ContractorAgreement = {
 export type ProgressEntry = {
   id: string;
   date: string;
+  createdAt?: string;
   phaseId?: string;
   floorId?: string;
   taskId?: string;
   progressPercent: number;
   notes: string;
+  supersedesId?: string;
   attachments: AttachmentRef[];
 };
 export type StockItem = {
@@ -140,7 +145,7 @@ export type StockMovement = {
   id: string;
   date: string;
   itemId: string;
-  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN';
+  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN' | 'CORRECTION_OUT';
   quantity: number;
   floorId?: string;
   phaseId?: string;
@@ -155,6 +160,7 @@ export type ProjectReminder = {
   repeat: 'NONE' | 'MONTHLY';
   completed: boolean;
   lastNotifiedDate?: string;
+  lastCompletedMonth?: string;
   notes?: string;
 };
 export type ConstructionSuite = {
@@ -165,6 +171,17 @@ export type ConstructionSuite = {
   stockItems: StockItem[];
   stockMovements: StockMovement[];
   reminders: ProjectReminder[];
+};
+
+export type FinancialAllocation = {
+  id: string;
+  transactionId: string;
+  createdAt: string;
+  reason: string;
+  floorId?: string;
+  phaseId?: string;
+  costBucket: CostBucket;
+  category: string;
 };
 
 export type ProjectState = {
@@ -189,6 +206,7 @@ export type ProjectState = {
   contractors: Entity[];
   loans: LoanFacility[];
   cashReconciliations: CashReconciliation[];
+  financialAllocations: FinancialAllocation[];
   construction: ConstructionSuite;
   updatedAt: string;
 };
@@ -219,8 +237,10 @@ export type Transaction = {
   fundingSourceId?: string;
   milestoneId?: string;
   phaseId?: string;
+  floorId?: string;
   vendorId?: string;
   contractorId?: string;
+  agreementId?: string;
   costBucket?: CostBucket;
   category?: string;
   payee?: string;
@@ -231,6 +251,10 @@ export type Transaction = {
   attachments?: AttachmentRef[];
   reversalOf?: string;
   linkedTransactionId?: string;
+  loanFacilityId?: string;
+  loanPrincipalAmount?: number;
+  loanInterestAmount?: number;
+  loanFeeAmount?: number;
 };
 
 export type LedgerSummary = {
@@ -241,9 +265,19 @@ export type LedgerSummary = {
   fundingReceived: number;
   advancesOutstanding: number;
   loanRepayments: number;
+  loanPrincipalPaid: number;
+  loanInterestPaid: number;
+  loanFeesPaid: number;
+  unallocatedLoanRepayments: number;
   accountBalances: Record<string, number>;
   phaseSpend: Record<string, number>;
+  floorSpend: Record<string, number>;
+  unallocatedConstructionCost: number;
   categorySpend: Record<string, number>;
   monthlySpend: Record<string, number>;
   txCount: number;
+  receivedBySource: Record<string, number>;
+  advanceById: Record<string, number>;
+  integrityWarnings: string[];
+  reversedCount: number;
 };

@@ -1,6 +1,7 @@
 'use client';
 
 import type { AttachmentRef, ProjectState, Transaction } from './types';
+import { validateBackupData } from './backup-validation';
 
 const DB_NAME = 'plot-to-ghar-local-v2';
 const DB_VERSION = 1;
@@ -78,7 +79,8 @@ export async function listLocalTransactions(): Promise<Transaction[]> {
 export async function putLocalTransaction(transaction: Transaction) {
   const db = await openDb();
   const tx = db.transaction(TX, 'readwrite');
-  tx.objectStore(TX).put(transaction);
+  // append-only: never silently replace an existing financial transaction ID.
+  tx.objectStore(TX).add(transaction);
   await done(tx);
   db.close();
 }
@@ -196,40 +198,46 @@ export async function buildStandaloneBackup(state: ProjectState, transactions: T
 }
 
 export async function restoreStandaloneBackup(backup: any) {
-  if (backup?.format !== 'plot-to-ghar-standalone-backup-v1') {
-    throw new Error('Unsupported standalone backup format.');
-  }
-  if (!backup.state || !Array.isArray(backup.transactions) || !Array.isArray(backup.attachments)) {
-    throw new Error('Invalid standalone backup.');
+  if (backup?.format !== 'plot-to-ghar-standalone-backup-v1') throw new Error('Unsupported standalone backup format.');
+  if (!Array.isArray(backup.attachments) || backup.attachments.length > 2000) throw new Error('Invalid evidence attachments in backup.');
+  const { state, transactions } = validateBackupData(backup);
+
+  // Parse and validate all attachment content BEFORE opening the write transaction.
+  // An exception during a transaction otherwise risks a partially restored device.
+  const prepared: AttachmentRow[] = [];
+  const seen = new Set<string>();
+  for (const item of backup.attachments) {
+    if (!item || typeof item.id !== 'string' || !item.id || seen.has(item.id)) {
+      throw new Error('Duplicate or invalid evidence ID in backup.');
+    }
+    seen.add(item.id);
+    const blob = dataUrlToBlob(String(item.dataUrl || ''));
+    if (blob.size > 8 * 1024 * 1024) throw new Error('Evidence file exceeds the 8 MB limit.');
+    prepared.push({
+      id: item.id,
+      name: String(item.name || 'evidence').slice(0, 160),
+      contentType: String(item.contentType || blob.type || 'application/octet-stream'),
+      size: blob.size,
+      blob,
+      createdAt: String(item.createdAt || new Date().toISOString()),
+    });
   }
 
   const db = await openDb();
-  const tx = db.transaction([KV, TX, ATT], 'readwrite');
-  tx.objectStore(KV).put(backup.state, STATE_KEY);
-  const txStore = tx.objectStore(TX);
-  const attStore = tx.objectStore(ATT);
-  txStore.clear();
-  attStore.clear();
-
-  for (const transaction of backup.transactions) txStore.put(transaction);
-  for (const item of backup.attachments) {
-    const blob = dataUrlToBlob(String(item.dataUrl || ''));
-    attStore.put({
-      id: String(item.id),
-      name: String(item.name || 'evidence'),
-      contentType: String(item.contentType || blob.type || 'application/octet-stream'),
-      size: Number(item.size || blob.size),
-      blob,
-      createdAt: String(item.createdAt || new Date().toISOString()),
-    } satisfies AttachmentRow);
+  try {
+    const tx = db.transaction([KV, TX, ATT], 'readwrite');
+    tx.objectStore(KV).put(state, STATE_KEY);
+    const txStore = tx.objectStore(TX);
+    const attStore = tx.objectStore(ATT);
+    txStore.clear();
+    attStore.clear();
+    for (const financial of transactions) txStore.add(financial);
+    for (const evidence of prepared) attStore.add(evidence);
+    await done(tx);
+    return { state, transactions };
+  } finally {
+    db.close();
   }
-
-  await done(tx);
-  db.close();
-  return {
-    state: backup.state as ProjectState,
-    transactions: backup.transactions as Transaction[],
-  };
 }
 
 export async function migrateLegacySnapshot() {

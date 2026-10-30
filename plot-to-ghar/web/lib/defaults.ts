@@ -1,4 +1,4 @@
-import type { ConstructionPhase, ProjectState } from './types';
+import type { ConstructionPhase, ProjectState, Transaction } from './types';
 
 const milestoneNames = [
   'Plot Locked',
@@ -51,7 +51,7 @@ function defaultPhases(): ConstructionPhase[] {
 
 export function defaultState(): ProjectState {
   return {
-    version: 3,
+    version: 4,
     revision: 1,
     project: {
       name: 'C-19 Plot to Home',
@@ -92,6 +92,7 @@ export function defaultState(): ProjectState {
       },
     ],
     cashReconciliations: [],
+    financialAllocations: [],
     construction: {
       floors: [
         { id: 'floor-ground', name: 'Ground Floor · Shops + Parking', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
@@ -136,6 +137,7 @@ export function normalizeState(input?: Partial<ProjectState> | null): ProjectSta
     contractors: Array.isArray(input.contractors) ? input.contractors : [],
     loans: Array.isArray(input.loans) && input.loans.length ? input.loans : base.loans,
     cashReconciliations: Array.isArray(input.cashReconciliations) ? input.cashReconciliations : [],
+    financialAllocations: Array.isArray(input.financialAllocations) ? input.financialAllocations : [],
     construction: {
       floors: Array.isArray(input.construction?.floors) ? input.construction.floors : base.construction.floors,
       schedule: Array.isArray(input.construction?.schedule) ? input.construction.schedule : [],
@@ -163,6 +165,14 @@ export function validateProjectState(state: ProjectState) {
     if (!a.name?.trim()) throw new Error('Every account needs a name.');
     if (!Number.isFinite(Number(a.openingBalance))) throw new Error('Invalid opening balance.');
   }
+  for (const f of state.fundingSources) {
+    if (!f.id || !f.name.trim() || !Number.isFinite(f.committedAmount) || f.committedAmount < 0) throw new Error('Invalid funding commitment.');
+  }
+  if (!Number.isFinite(state.project.plotAreaSqYard) || state.project.plotAreaSqYard <= 0) throw new Error('Plot area must be positive.');
+  if (!Number.isFinite(state.project.agreedPurchasePrice) || state.project.agreedPurchasePrice < 0) throw new Error('Agreed purchase price cannot be negative.');
+  for (const loan of state.loans) {
+    if (!loan.lenderName.trim() || [loan.sanctionedAmount,loan.purchaseComponent,loan.constructionComponent].some((n)=>!Number.isFinite(n)||n<0)) throw new Error('Invalid loan facility.');
+  }
   for (const floor of state.construction.floors) {
     if (!floor.id || !floor.name.trim() || !Number.isFinite(floor.areaSqFt) || floor.areaSqFt < 0) throw new Error('Invalid floor area.');
     if (!Number.isFinite(floor.budgetAmount) || floor.budgetAmount < 0) throw new Error('Invalid floor budget.');
@@ -172,20 +182,132 @@ export function validateProjectState(state: ProjectState) {
     if (!work.name.trim() || !work.startDate || !work.endDate || work.endDate < work.startDate) throw new Error('Invalid construction schedule dates.');
     if (!Number.isFinite(work.estimatedCost) || work.estimatedCost < 0) throw new Error('Invalid work estimate.');
     if (work.dependsOnId && (!workIds.has(work.dependsOnId) || work.dependsOnId === work.id)) throw new Error('Invalid task dependency.');
+    const visited = new Set<string>([work.id]);
+    let current = work.dependsOnId;
+    while (current) {
+      if (visited.has(current)) throw new Error('Circular task dependencies are not allowed.');
+      visited.add(current);
+      current = state.construction.schedule.find((w)=>w.id===current)?.dependsOnId;
+    }
   }
   for (const a of state.construction.agreements) {
     if (!a.title.trim() || !a.scope.trim() || !Number.isFinite(a.value) || a.value < 0) throw new Error('Invalid contractor agreement.');
     if (!state.contractors.some((c) => c.id === a.contractorId)) throw new Error('Agreement contractor not found.');
   }
+  if (state.financialAllocations.length > 100000) throw new Error('Too many financial allocation records.');
+  for (const a of state.financialAllocations) {
+    if (!a.id || !a.transactionId || !a.createdAt || !a.reason.trim() || a.reason.trim().length < 8 ||
+      !['ACQUISITION','CONSTRUCTION','OTHER'].includes(a.costBucket)) {
+      throw new Error('Invalid financial classification correction.');
+    }
+    if (a.floorId && !state.construction.floors.some((f)=>f.id===a.floorId)) throw new Error('Financial allocation floor missing.');
+    if (a.phaseId && !state.phases.some((p)=>p.id===a.phaseId)) throw new Error('Financial allocation phase missing.');
+  }
   for (const item of state.construction.stockItems) {
     if (!item.name.trim() || !item.unit.trim() || !Number.isFinite(item.reorderLevel) || item.reorderLevel < 0) throw new Error('Invalid inventory item.');
   }
+  const progressIds = new Set(state.construction.progress.map((p)=>p.id));
+  for (const entry of state.construction.progress) {
+    if (entry.supersedesId && (!progressIds.has(entry.supersedesId) || entry.supersedesId === entry.id)) {
+      throw new Error('Progress correction must refer to another existing entry.');
+    }
+    if (!Number.isFinite(entry.progressPercent) || entry.progressPercent < 0 || entry.progressPercent > 100) throw new Error('Invalid progress percentage.');
+  }
   for (const entry of state.construction.stockMovements) {
     if (!state.construction.stockItems.some((s) => s.id === entry.itemId) || !Number.isFinite(entry.quantity) || entry.quantity <= 0) throw new Error('Invalid inventory movement.');
+    if (!['RECEIPT','CONSUMPTION','WASTAGE','RETURN','CORRECTION_IN','CORRECTION_OUT'].includes(entry.type)) throw new Error('Unknown stock movement.');
+
   }
   for (const p of state.phases) {
     if (!p.id || !p.name?.trim()) throw new Error('Invalid construction phase.');
     if (!Number.isFinite(Number(p.budgetAmount)) || Number(p.budgetAmount) < 0) throw new Error('Invalid phase budget.');
   }
   return state;
+}
+
+/**
+ * Editable planning details are not the financial ledger.
+ * Changing an opening balance after posting money creates phantom cash, so
+ * changes to previously used accounts must be posted as explicit ledger entries.
+ */
+export function validateStateTransition(previous: ProjectState, next: ProjectState, transactions: Transaction[]) {
+  const usedAccountIds = new Set(transactions.flatMap((t) => [t.sourceAccountId, t.destinationAccountId]).filter(Boolean));
+  const usedSourceIds = new Set(transactions.map((t) => t.fundingSourceId).filter(Boolean));
+  for (const prior of previous.accounts) {
+    const updated = next.accounts.find((a) => a.id === prior.id);
+    if (!updated && usedAccountIds.has(prior.id)) throw new Error('Cannot delete an account with transactions: ' + prior.name);
+    if (!updated) continue;
+    if (usedAccountIds.has(prior.id) && Math.round(updated.openingBalance * 100) !== Math.round(prior.openingBalance * 100)) {
+      throw new Error('Opening balance for ' + prior.name + ' is locked after the first transaction. Use Add → audited balance correction.');
+    }
+  }
+  for (const prior of previous.fundingSources) {
+    const updated = next.fundingSources.find((f) => f.id === prior.id);
+    if (!updated && usedSourceIds.has(prior.id)) throw new Error('Cannot remove a funding source already used in ledger.');
+    if (updated && updated.type !== prior.type && usedSourceIds.has(prior.id)) {
+      throw new Error('Cannot change an already-used funding source type.');
+    }
+  }
+  // These documents are event history. Existing entries cannot be silently
+  // overwritten through a general project-state PUT or device save.
+  const unchanged = <T extends { id: string }>(before: T[], after: T[], label: string) => {
+    for (const original of before) {
+      const current = after.find((x)=>x.id===original.id);
+      if (!current || JSON.stringify(original)!==JSON.stringify(current)) {
+        throw new Error(label+' history cannot be edited or deleted. Append a correcting entry instead.');
+      }
+    }
+  };
+  unchanged(previous.construction.stockMovements, next.construction.stockMovements, 'Stock');
+  const priorMovements = new Set(previous.construction.stockMovements.map((m)=>m.id));
+  for (const m of next.construction.stockMovements) {
+    if (!priorMovements.has(m.id) && m.type.startsWith('CORRECTION_') && (!m.notes || m.notes.trim().length < 8)) {
+      throw new Error('New stock corrections need a reason of at least 8 characters.');
+    }
+  }
+  unchanged(previous.construction.progress, next.construction.progress, 'Progress');
+  unchanged(previous.cashReconciliations, next.cashReconciliations, 'Cash-count');
+  unchanged(previous.financialAllocations, next.financialAllocations, 'Financial allocation');
+  const oldAllocIds = new Set(previous.financialAllocations.map((a)=>a.id));
+  for (const a of next.financialAllocations) {
+    if (oldAllocIds.has(a.id)) continue;
+    const original = transactions.find((t)=>t.id===a.transactionId);
+    if (!original || !['EXPENSE','DIRECT_FUNDED_EXPENSE','ADVANCE_ADJUSTMENT'].includes(original.type)) {
+      throw new Error('Financial reclassification must reference an original expense.');
+    }
+    if (transactions.some((t)=>t.reversalOf===original.id)) throw new Error('Cannot reclassify a reversed expense.');
+  }
+
+  const agreementIdsInLedger = new Set(transactions.map((t)=>t.agreementId).filter(Boolean));
+  for (const before of previous.construction.agreements) {
+    const after = next.construction.agreements.find((a)=>a.id===before.id);
+    if (!after && (before.status!=='DRAFT' || agreementIdsInLedger.has(before.id))) {
+      throw new Error('Signed or ledger-linked contractor agreements cannot be deleted.');
+    }
+    if (!after) continue;
+    if (agreementIdsInLedger.has(before.id) && before.contractorId!==after.contractorId) throw new Error('Cannot change the contractor of an agreement with payments.');
+    if (before.status==='CLOSED' && after.status!=='CLOSED') throw new Error('Closed agreements cannot be reopened.');
+    if (before.status==='SIGNED' && after.status==='DRAFT') throw new Error('Signed agreements cannot revert to draft.');
+    if (before.status==='SIGNED' || before.status==='CLOSED') {
+      const legalTerms = (x: typeof before) => [x.contractorId,x.title,x.scope,x.value,x.advanceLimit,x.startDate,x.endDate,x.paymentTerms,x.retentionPercent,x.parentAgreementId];
+      if (JSON.stringify(legalTerms(before)) !== JSON.stringify(legalTerms(after))) {
+        throw new Error('Signed contractor terms cannot be edited. Create a draft amendment.');
+      }
+    }
+  }
+  for (const item of previous.construction.stockItems) {
+    const updated = next.construction.stockItems.find((x)=>x.id===item.id);
+    if (previous.construction.stockMovements.some((m)=>m.itemId===item.id)) {
+      if (!updated) throw new Error('Cannot delete material with stock history.');
+      if (updated.unit!==item.unit) throw new Error('Material unit is locked after stock movements exist.');
+    }
+  }
+
+  const knownPhases = new Set(next.phases.map((p) => p.id));
+  const knownFloors = new Set(next.construction.floors.map((f) => f.id));
+  for (const t of transactions) {
+    if (t.phaseId && !knownPhases.has(t.phaseId)) throw new Error('Cannot delete a phase used by the ledger.');
+    if (t.floorId && !knownFloors.has(t.floorId)) throw new Error('Cannot delete a floor used by the ledger.');
+  }
+  return next;
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { AttachmentRef, LineItem, ProjectState, Transaction, TxType } from '@/lib/types';
 import { saveLocalAttachment } from '@/lib/local-db';
+import { refundableExpenses, unsettledAdvances } from '@/lib/ledger';
 import { money, PageTitle } from '@/components/ui';
 
 async function compressImage(file: File) {
@@ -41,7 +42,12 @@ export function AddTransaction({
   prefill?: { amount: string; date: string; payee: string; description: string; attachment?: AttachmentRef };
 }) {
   const [type, setType] = useState<TxType>('EXPENSE');
+  const [adjustmentDirection, setAdjustmentDirection] = useState<'IN' | 'OUT'>('IN');
   const [amount, setAmount] = useState(prefill?.amount || '');
+  const [loanFacilityId, setLoanFacilityId] = useState(state.loans[0]?.id || '');
+  const [loanPrincipal, setLoanPrincipal] = useState('');
+  const [loanInterest, setLoanInterest] = useState('');
+  const [loanFees, setLoanFees] = useState('');
   const [source, setSource] = useState('');
   const [dest, setDest] = useState('');
   const [funding, setFunding] = useState('');
@@ -52,8 +58,10 @@ export function AddTransaction({
   const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [milestoneId, setMilestoneId] = useState(state.milestones.find((m) => m.status === 'IN_PROGRESS')?.id || '');
   const [phaseId, setPhaseId] = useState(state.phases.find((p) => p.status === 'IN_PROGRESS')?.id || '');
+  const [floorId, setFloorId] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [contractorId, setContractorId] = useState('');
+  const [agreementId, setAgreementId] = useState('');
   const [costBucket, setCostBucket] = useState<'ACQUISITION' | 'CONSTRUCTION' | 'OTHER'>('CONSTRUCTION');
   const [attachments, setAttachments] = useState<AttachmentRef[]>(prefill?.attachment ? [prefill.attachment] : []);
   const [items, setItems] = useState<LineItem[]>([]);
@@ -61,21 +69,8 @@ export function AddTransaction({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
-  const openAdvances = useMemo(() => {
-    return txs
-      .filter((t) => t.type === 'ADVANCE')
-      .map((advance) => {
-        const settled = txs
-          .filter(
-            (t) =>
-              (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') &&
-              t.linkedTransactionId === advance.id
-          )
-          .reduce((sum, t) => sum + t.amount, 0);
-        return { advance, remaining: advance.amount - settled };
-      })
-      .filter((x) => x.remaining > 0.01);
-  }, [txs]);
+  const openAdvances = useMemo(() => unsettledAdvances(txs), [txs]);
+  const refundable = useMemo(() => refundableExpenses(txs), [txs]);
 
   const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const finalAmount = items.length ? itemTotal : Number(amount || 0);
@@ -128,11 +123,30 @@ export function AddTransaction({
     setLinkedTransactionId(id);
     const found = openAdvances.find((x) => x.advance.id === id)?.advance;
     if (found) {
+      setCostBucket(found.costBucket || 'CONSTRUCTION');
+      setPhaseId(found.phaseId || '');
       setContractorId(found.contractorId || '');
+      setAgreementId(found.agreementId || '');
       setPayee(found.payee || '');
       setCategory(found.category || 'Advance settlement');
       if (type === 'ADVANCE_REFUND') setDest(found.sourceAccountId || '');
     }
+  }
+
+  function selectRefund(id: string) {
+    setLinkedTransactionId(id);
+    const original = refundable.find((x) => x.original.id === id)?.original;
+    if (!original) return;
+    setCostBucket(original.costBucket || 'OTHER');
+    setPhaseId(original.phaseId || '');
+    setFloorId(original.floorId || '');
+    setMilestoneId(original.milestoneId || '');
+    setCategory(original.category || 'Expense refund');
+    setPayee(original.payee || '');
+    setVendorId(original.vendorId || '');
+    setContractorId(original.contractorId || '');
+    setAgreementId(original.agreementId || '');
+    setDescription('Refund for expense ' + original.id);
   }
 
   async function submit(e: React.FormEvent) {
@@ -148,14 +162,24 @@ export function AddTransaction({
       transactionDate: new Date(date + 'T12:00:00').toISOString(),
       type,
       amount: finalAmount,
-      sourceAccountId: source || undefined,
-      destinationAccountId: dest || undefined,
+      sourceAccountId: type === 'BALANCE_ADJUSTMENT' ? (adjustmentDirection === 'OUT' ? source || undefined : undefined) : source || undefined,
+      destinationAccountId: type === 'BALANCE_ADJUSTMENT' ? (adjustmentDirection === 'IN' ? dest || undefined : undefined) : dest || undefined,
       fundingSourceId: funding || undefined,
       milestoneId: milestoneId || undefined,
-      phaseId: phaseId || undefined,
+      phaseId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.phaseId
+        : phaseId || undefined,
+      floorId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.floorId
+        : floorId || undefined,
       vendorId: vendorId || undefined,
       contractorId: contractorId || undefined,
-      costBucket,
+      agreementId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.agreementId
+        : agreementId || undefined,
+      costBucket: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.costBucket || 'OTHER'
+        : costBucket,
       category: category.trim() || undefined,
       payee: payee.trim() || undefined,
       referenceNumber: referenceNumber.trim() || undefined,
@@ -163,12 +187,16 @@ export function AddTransaction({
       lineItems: items.length ? items : undefined,
       attachments,
       linkedTransactionId: linkedTransactionId || undefined,
+      loanFacilityId: type === 'LOAN_REPAYMENT' ? loanFacilityId || undefined : undefined,
+      loanPrincipalAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanPrincipal || 0) : undefined,
+      loanInterestAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanInterest || 0) : undefined,
+      loanFeeAmount: type === 'LOAN_REPAYMENT' && [loanPrincipal,loanInterest,loanFees].some(Boolean) ? Number(loanFees || 0) : undefined,
     };
     await onSave(tx);
   }
 
-  const needsSource = ['EXPENSE', 'TRANSFER', 'ADVANCE', 'LOAN_REPAYMENT'].includes(type);
-  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND', 'ADVANCE_REFUND'].includes(type);
+  const needsSource = ['EXPENSE', 'TRANSFER', 'ADVANCE', 'LOAN_REPAYMENT'].includes(type) || (type === 'BALANCE_ADJUSTMENT' && adjustmentDirection === 'OUT');
+  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND', 'ADVANCE_REFUND'].includes(type) || (type === 'BALANCE_ADJUSTMENT' && adjustmentDirection === 'IN');
   const settlesAdvance = ['ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(type);
   const isCost = ['EXPENSE', 'ADVANCE_ADJUSTMENT', 'REFUND', 'DIRECT_FUNDED_EXPENSE'].includes(type);
 
@@ -177,12 +205,14 @@ export function AddTransaction({
       <PageTitle title="Add Transaction" description="Transfers, funding, advances and actual cost are accounted separately." />
       {prefill ? <p className="warning">OCR prepared this draft. Verify amount, date, vendor, payment account and the receipt before saving. Nothing has been posted yet.</p> : null}
       <form className="panel form" onSubmit={submit}>
+        <p className="muted">Record money movements here. Ledger entries cannot be silently edited after saving; use a linked refund or correcting reversal.</p>
         <label>
           Transaction type
           <select value={type} onChange={(e) => {
             const next = e.target.value as TxType;
             setType(next);
             setLinkedTransactionId('');
+            setItems([]);
           }}>
             <option value="EXPENSE">Expense</option>
             <option value="TRANSFER">Transfer — not an expense</option>
@@ -193,9 +223,20 @@ export function AddTransaction({
             <option value="REFUND">Expense refund</option>
             <option value="DIRECT_FUNDED_EXPENSE">Lender paid expense directly</option>
             <option value="LOAN_REPAYMENT">Loan repayment — not project cost</option>
+            <option value="BALANCE_ADJUSTMENT">Audited bank/cash balance correction (not expense)</option>
           </select>
         </label>
 
+        {type === 'BALANCE_ADJUSTMENT' ? (
+          <div className="warning">
+            Use only to reconcile a verified discrepancy with a written reason. This changes the account balance, but it never changes project cost or pretends fresh funding was received.
+            <label>Correction direction
+              <select value={adjustmentDirection} onChange={(e) => setAdjustmentDirection(e.target.value as 'IN' | 'OUT')}>
+                <option value="IN">Increase account balance</option><option value="OUT">Decrease account balance</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
         <div className="grid2">
           <label>
             Amount
@@ -244,6 +285,43 @@ export function AddTransaction({
           </label>
         ) : null}
 
+        {type === 'REFUND' ? (
+          <label>
+            Original expense to refund
+            <select required value={linkedTransactionId} onChange={(e) => selectRefund(e.target.value)}>
+              <option value="">Choose refundable purchase…</option>
+              {refundable.map(({ original, remaining }) => (
+                <option value={original.id} key={original.id}>
+                  {String(original.transactionDate).slice(0, 10)} · {original.payee || original.category || original.type} · available {money(remaining)}
+                </option>
+              ))}
+            </select>
+            {!refundable.length ? <small>No eligible expenses. Record the original purchase before its refund.</small> : null}
+          </label>
+        ) : null}
+
+        {type === 'LOAN_REPAYMENT' ? (
+          <section className="suiteRecord">
+            <b>EMI / loan payment breakdown</b>
+            <p className="muted">Only principal reduces loan debt. Interest and lender fees are financing outflows, not new construction expenditure.</p>
+            <label>Loan facility
+              <select value={loanFacilityId} onChange={(e) => setLoanFacilityId(e.target.value)}>
+                <option value="">Unspecified loan</option>
+                {state.loans.map((loan) => <option value={loan.id} key={loan.id}>{loan.lenderName}</option>)}
+              </select>
+            </label>
+            <div className="grid3">
+              <label>Principal ₹<input type="number" min="0" step="0.01" value={loanPrincipal} onChange={(e) => setLoanPrincipal(e.target.value)} placeholder="From lender statement" /></label>
+              <label>Interest ₹<input type="number" min="0" step="0.01" value={loanInterest} onChange={(e) => setLoanInterest(e.target.value)} placeholder="From lender statement" /></label>
+              <label>Fees ₹<input type="number" min="0" step="0.01" value={loanFees} onChange={(e) => setLoanFees(e.target.value)} placeholder="0" /></label>
+            </div>
+            {[loanPrincipal, loanInterest, loanFees].some(Boolean) && <div className="row">
+              <span>Allocated vs total repayment</span>
+              <b>{money(Number(loanPrincipal || 0) + Number(loanInterest || 0) + Number(loanFees || 0))} / {money(finalAmount)}</b>
+            </div>}
+            <small className="muted">If your lender statement does not show the split, leave all three blank. The EMI remains recorded but is flagged as unallocated until corrected.</small>
+          </section>
+        ) : null}
         {settlesAdvance ? (
           <label>
             Advance to settle
@@ -261,7 +339,7 @@ export function AddTransaction({
         {isCost ? (
           <label>
             Cost bucket
-            <select value={costBucket} onChange={(e) => setCostBucket(e.target.value as typeof costBucket)}>
+            <select disabled={type === 'REFUND'} value={costBucket} onChange={(e) => setCostBucket(e.target.value as typeof costBucket)}>
               <option value="ACQUISITION">Plot / registry / acquisition</option>
               <option value="CONSTRUCTION">Construction</option>
               <option value="OTHER">Other project cost</option>
@@ -279,13 +357,21 @@ export function AddTransaction({
           </label>
           <label>
             Construction phase
-            <select value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
+            <select disabled={type === 'REFUND'} value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
               <option value="">None</option>
               {state.phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
         </div>
 
+        {['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE', 'ADVANCE_ADJUSTMENT', 'REFUND'].includes(type) ? (
+          <label>Floor / construction zone (for accurate floor budgets)
+            <select value={floorId} disabled={type === 'REFUND'} onChange={(e) => setFloorId(e.target.value)}>
+              <option value="">Shared / not assigned</option>
+              {state.construction.floors.map((f) => <option value={f.id} key={f.id}>{f.name}</option>)}
+            </select>
+          </label>
+        ) : null}
         <div className="grid2">
           <label>
             Vendor
@@ -302,6 +388,20 @@ export function AddTransaction({
             </select>
           </label>
         </div>
+
+        {['EXPENSE','ADVANCE','ADVANCE_ADJUSTMENT','ADVANCE_REFUND','REFUND','DIRECT_FUNDED_EXPENSE'].includes(type) && state.construction.agreements.length > 0 ? (
+          <label>Contractor agreement (optional, for exact contract reconciliation)
+            <select disabled={type === 'REFUND' || type === 'ADVANCE_ADJUSTMENT' || type === 'ADVANCE_REFUND'} value={agreementId} onChange={(e) => {
+              const next = e.target.value;
+              setAgreementId(next);
+              const agreement = state.construction.agreements.find((a)=>a.id===next);
+              if (agreement) setContractorId(agreement.contractorId);
+            }}>
+              <option value="">Unassigned agreement</option>
+              {state.construction.agreements.filter((a) => !contractorId || a.contractorId === contractorId).map((a)=><option key={a.id} value={a.id}>{a.title}</option>)}
+            </select>
+          </label>
+        ) : null}
 
         <div className="grid2">
           <label>
@@ -321,7 +421,7 @@ export function AddTransaction({
 
         <label>
           Description
-          <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What was this for?" />
+          <textarea required={type === "BALANCE_ADJUSTMENT"} minLength={type === "BALANCE_ADJUSTMENT" ? 8 : undefined} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={type === "BALANCE_ADJUSTMENT" ? "Why does physical/bank cash differ from the ledger? Reference the bank statement." : "What was this for?"} />
         </label>
 
         <div className="lineItemHead">
@@ -329,7 +429,7 @@ export function AddTransaction({
             <b>Itemized materials</b>
             <small>Optional. Quantity × rate automatically becomes the transaction total.</small>
           </div>
-          <button type="button" className="secondary small" onClick={addItem}>+ Item</button>
+          <button type="button" className="secondary small" disabled={type === "BALANCE_ADJUSTMENT" || type === "LOAN_REPAYMENT" || type === "TRANSFER"} onClick={addItem}>+ Item</button>
         </div>
 
         {items.map((item, i) => (

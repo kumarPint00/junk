@@ -13,6 +13,7 @@ export function More({
   reload,
   mode,
   onLock,
+  onNavigate,
 }: {
   state: ProjectState;
   txs: Transaction[];
@@ -20,6 +21,7 @@ export function More({
   reload: () => Promise<void>;
   mode: 'cloud' | 'standalone';
   onLock: () => Promise<void>;
+  onNavigate: (target: 'add' | 'ledger') => void;
 }) {
   const [draft, setDraft] = useState<ProjectState>(() => structuredClone(state));
   const [restore, setRestore] = useState<File | null>(null);
@@ -32,8 +34,9 @@ export function More({
     fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then(setHealth).catch(() => setHealth({ ok: false }));
   }, []);
 
-  const summary = useMemo(() => computeLedger(state.accounts, txs), [state.accounts, txs]);
+  const summary = useMemo(() => computeLedger(state.accounts, txs, state.financialAllocations), [state.accounts, state.financialAllocations, txs]);
   const systemCash = cashAccount ? summary.accountBalances[cashAccount] || 0 : 0;
+  const usedAccountIds = new Set(txs.flatMap((t) => [t.sourceAccountId,t.destinationAccountId]).filter(Boolean));
 
   function addEntity(kind: 'vendors' | 'contractors') {
     const next: Entity = { id: crypto.randomUUID(), name: kind === 'vendors' ? 'New Vendor' : 'New Contractor', active: true };
@@ -48,9 +51,9 @@ export function More({
     });
   }
 
-  function reconcileCash() {
+  async function reconcileCash() {
     const counted = Number(countedCash);
-    if (!cashAccount || !Number.isFinite(counted)) return;
+    if (!cashAccount || !countedCash.trim() || !Number.isFinite(counted)) return;
     const entry = {
       id: crypto.randomUUID(),
       accountId: cashAccount,
@@ -61,6 +64,7 @@ export function More({
     };
     const next = { ...draft, cashReconciliations: [entry, ...draft.cashReconciliations].slice(0, 100) };
     setDraft(next);
+    await save(next);
     setCountedCash('');
   }
 
@@ -136,10 +140,11 @@ export function More({
               <select value={a.type} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, type: e.target.value as typeof a.type }; setDraft({ ...draft, accounts: rows }); }}>
                 <option value="BANK">Bank</option><option value="CASH">Cash</option><option value="OTHER">Other</option>
               </select>
-              <input inputMode="decimal" value={a.openingBalance} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, openingBalance: Number(e.target.value) }; setDraft({ ...draft, accounts: rows }); }} />
+              <input type="number" step="0.01" title={usedAccountIds.has(a.id) ? 'Locked after transactions: use Add → audited balance correction' : 'Opening balance may be edited before the first transaction'} disabled={usedAccountIds.has(a.id)} value={a.openingBalance} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, openingBalance: Number(e.target.value) }; setDraft({ ...draft, accounts: rows }); }} />
               <label className="check"><input type="checkbox" checked={a.active} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, active: e.target.checked }; setDraft({ ...draft, accounts: rows }); }} />Active</label>
             </div>
           ))}
+          <p className="muted">Opening balances lock after the first transaction. Use an audited balance correction to change verified cash or bank balances.</p>
           <button type="button" className="secondary small" onClick={() => setDraft((s) => ({ ...s, accounts: [...s.accounts, { id: crypto.randomUUID(), name: 'New Account', type: 'BANK', openingBalance: 0, active: true }] }))}>+ Account</button>
         </div>
       </details>
@@ -185,6 +190,9 @@ export function More({
               <input value={v.phone || ''} onChange={(e) => updateEntity('vendors', i, { phone: e.target.value })} placeholder="Phone" />
               <input value={v.specialty || ''} onChange={(e) => updateEntity('vendors', i, { specialty: e.target.value })} placeholder="Material / specialty" />
               <label className="check"><input type="checkbox" checked={v.active !== false} onChange={(e) => updateEntity('vendors', i, { active: e.target.checked })} />Active</label>
+              <input value={v.address || ''} onChange={(e) => updateEntity('vendors', i, { address: e.target.value })} placeholder="Vendor address" />
+              <input value={v.gstin || ''} onChange={(e) => updateEntity('vendors', i, { gstin: e.target.value })} placeholder="GSTIN optional" />
+              <input value={v.notes || ''} onChange={(e) => updateEntity('vendors', i, { notes: e.target.value })} placeholder="Notes / terms" />
             </div>
           ))}
           <button className="secondary small" type="button" onClick={() => addEntity('vendors')}>+ Vendor</button>
@@ -196,6 +204,8 @@ export function More({
               <input value={v.phone || ''} onChange={(e) => updateEntity('contractors', i, { phone: e.target.value })} placeholder="Phone" />
               <input value={v.specialty || ''} onChange={(e) => updateEntity('contractors', i, { specialty: e.target.value })} placeholder="RCC / plumbing / electrical" />
               <label className="check"><input type="checkbox" checked={v.active !== false} onChange={(e) => updateEntity('contractors', i, { active: e.target.checked })} />Active</label>
+              <input value={v.address || ''} onChange={(e) => updateEntity('contractors', i, { address: e.target.value })} placeholder="Contractor address" />
+              <input value={v.notes || ''} onChange={(e) => updateEntity('contractors', i, { notes: e.target.value })} placeholder="Notes / agreement terms" />
             </div>
           ))}
           <button className="secondary small" type="button" onClick={() => addEntity('contractors')}>+ Contractor</button>
@@ -205,11 +215,13 @@ export function More({
       <details className="panel">
         <summary>Cash reconciliation</summary>
         <div className="detailsBody">
+          <p className="muted">A physical cash count is a comparison only; it does not post money to the ledger. Post a separate correction if needed.</p>
           <label>Cash account<select value={cashAccount} onChange={(e) => setCashAccount(e.target.value)}><option value="">Choose…</option>{state.accounts.filter((a) => a.type === 'CASH').map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select></label>
           <div className="row"><span>System cash</span><b>{money(systemCash)}</b></div>
           <label>Counted physical cash<input inputMode="decimal" value={countedCash} onChange={(e) => setCountedCash(e.target.value)} /></label>
           <div className="row"><span>Difference</span><b>{money(Number(countedCash || 0) - systemCash)}</b></div>
-          <button type="button" className="secondary" onClick={reconcileCash}>Record reconciliation</button>
+          <button type="button" className="secondary" onClick={reconcileCash} disabled={!countedCash.trim()}>Record cash count</button>
+          <button type="button" className="secondary" onClick={() => onNavigate('add')}>Add audited balance correction</button>
           {draft.cashReconciliations.slice(0, 10).map((r) => (
             <div className="row" key={r.id}>
               <span>{new Date(r.date).toLocaleString('en-IN')} · {state.accounts.find((a) => a.id === r.accountId)?.name}</span>
@@ -233,7 +245,7 @@ export function More({
         </button>
         <div className="restore">
           <input type="file" accept="application/json" onChange={(e) => setRestore(e.target.files?.[0] || null)} />
-          <button className="danger" disabled={!restore} onClick={doRestore}>Restore backup</button>
+          <button className="danger" disabled={!restore} onClick={() => doRestore().catch((e)=>alert(e instanceof Error ? e.message : 'Restore failed. No data was changed.'))}>Restore backup</button>
         </div>
       </section>
 
@@ -242,7 +254,7 @@ export function More({
         <div className="row"><span>Runtime mode</span><b>{mode === 'standalone' ? 'On-device / zero-cost' : 'Cloud sync'}</b></div>
         <div className="row"><span>Database</span><b>{mode === 'standalone' ? 'IndexedDB ready' : health?.database ? 'Cloud ready' : 'Unavailable'}</b></div>
         <div className="row"><span>Evidence storage</span><b>{mode === 'standalone' ? 'On-device ready' : health?.storageConfigured ? 'Cloud ready' : 'Not configured'}</b></div>
-        <div className="row"><span>App version</span><b>{health?.version || '2.3.0'}</b></div>
+        <div className="row"><span>App version</span><b>{health?.version || '2.4.0'}</b></div>
         <button className="secondary" onClick={() => onLock()}>Lock app</button>
       </section>
     </div>

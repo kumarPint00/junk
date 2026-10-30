@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AttachmentRef, ProjectState, Transaction, TxType } from '@/lib/types';
-import { defaultState, normalizeState, validateProjectState } from '@/lib/defaults';
+import { defaultState, normalizeState, validateProjectState, validateStateTransition } from '@/lib/defaults';
 import { computeLedger, findPotentialDuplicate, validateTx } from '@/lib/ledger';
 import {
   getLocalState,
@@ -44,12 +44,6 @@ function sortTransactions(txs: Transaction[]) {
   );
 }
 
-function reversalType(type: TxType): TxType {
-  if (type === 'EXPENSE') return 'REFUND';
-  if (type === 'TRANSFER') return 'TRANSFER';
-  if (type === 'ADVANCE') return 'ADVANCE_REFUND';
-  throw new Error('This transaction cannot be auto-voided. Add a correcting entry instead.');
-}
 
 export function AppShell() {
   const [mode, setMode] = useState<RuntimeMode>('checking');
@@ -209,7 +203,7 @@ export function AppShell() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  const summary = useMemo(() => (state ? computeLedger(state.accounts, txs) : null), [state, txs]);
+  const summary = useMemo(() => (state ? computeLedger(state.accounts, txs, state.financialAllocations) : null), [state, txs]);
 
   // Foreground browser reminder notifications. No background push claim: browsers may
   // suspend this page when closed. Android native notifications need a separate bridge.
@@ -290,6 +284,7 @@ export function AppShell() {
         })
       );
 
+      if (state) validateStateTransition(state, normalized, txs);
       await putLocalState(normalized);
       setState(normalized);
 
@@ -396,44 +391,22 @@ export function AppShell() {
 
     try {
       if (mode === 'standalone') {
-        const old = txs.find((x) => x.id === id);
-        if (!old) throw new Error('Transaction not found.');
-        const existing = txs.find((x) => x.reversalOf === old.id);
-        if (existing) {
-          setToast('This transaction is already reversed.');
-          return;
-        }
-
-        const type = reversalType(old.type);
+        const original = txs.find((x) => x.id === id);
+        if (!original) throw new Error('Transaction not found.');
+        if (original.type === 'REVERSAL' || original.reversalOf) throw new Error('Cannot reverse a correction entry.');
         const reversal: Transaction = {
           id: crypto.randomUUID(),
           createdAt: new Date().toISOString(),
           transactionDate: new Date().toISOString(),
-          type,
-          amount: old.amount,
-          sourceAccountId: type === 'TRANSFER' ? old.destinationAccountId : undefined,
-          destinationAccountId:
-            type === 'TRANSFER'
-              ? old.sourceAccountId
-              : type === 'REFUND' || type === 'ADVANCE_REFUND'
-                ? old.sourceAccountId
-                : undefined,
-          fundingSourceId: old.fundingSourceId,
-          milestoneId: old.milestoneId,
-          phaseId: old.phaseId,
-          vendorId: old.vendorId,
-          contractorId: old.contractorId,
-          costBucket: old.costBucket,
-          category: `Reversal: ${old.category || old.type}`,
-          payee: old.payee,
-          description: `Void/reversal of ${old.id}`,
-          reversalOf: old.id,
-          linkedTransactionId: old.type === 'ADVANCE' ? old.id : undefined,
+          type: 'REVERSAL',
+          amount: original.amount,
+          reversalOf: original.id,
+          description: 'Reversal of ' + original.id + '. Original retained for audit.',
         };
         validateTx(reversal, { state, transactions: txs });
         await putLocalTransaction(reversal);
         setTxs(sortTransactions([...txs, reversal]));
-        setToast('Correcting reversal created');
+        setToast('Correction recorded. Original remains in ledger.');
         return;
       }
 
@@ -543,12 +516,12 @@ export function AppShell() {
       ) : null}
 
       <main className="content">
-        {tab === 'home' ? <Home state={state} txs={txs} /> : null}
+        {tab === 'home' ? <Home state={state} txs={txs} save={saveState} navigate={setTab} /> : null}
         {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
         {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
         {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} /> : null}
-        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} /> : null}
+        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} onNavigate={setTab} /> : null}
       </main>
 
       <nav>

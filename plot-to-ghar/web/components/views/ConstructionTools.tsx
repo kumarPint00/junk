@@ -5,11 +5,14 @@ import type { AttachmentRef, ContractorAgreement, ConstructionSuite, ProgressEnt
 import { money } from '@/components/ui';
 import { emi, loanProjection, stockBalances, dueReminders } from '@/lib/construction-calcs';
 import { openEvidence, saveEvidence } from '@/lib/evidence';
-import { computeLedger } from '@/lib/ledger';
+import { computeLedger, agreementFinancials } from '@/lib/ledger';
 import type { SuiteProps, UpdateSuite } from './ConstructionHub';
 
 type ChildProps = SuiteProps & { patch: UpdateSuite };
-const dateNow = () => new Date().toISOString().slice(0, 10);
+const dateNow = () => {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+};
 function validNumber(s: string, min = 0) { const n = Number(s); return Number.isFinite(n) && n >= min ? n : NaN; }
 function ErrorLine({ message }: { message: string }) { return message ? <div className="error" role="alert">{message}</div> : null; }
 function AttachmentLinks({ refs }: { refs: AttachmentRef[] }) {
@@ -41,6 +44,7 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
     e.preventDefault();
     const q = validNumber(quantity, Number.EPSILON);
     if (!itemId || !Number.isFinite(q) || q <= 0) { setError('Choose material and positive quantity.'); return; }
+    if (type.startsWith('CORRECTION_') && note.trim().length < 8) { setError('Explain the reason for this inventory correction (8+ characters).'); return; }
     const sign = ['RECEIPT','CORRECTION_IN'].includes(type) ? 1 : -1;
     if ((balances[itemId] || 0) + sign * q < -0.000001) { setError('Not enough stock for this movement.'); return; }
     const entry: StockMovement = { id: crypto.randomUUID(), date: dateNow(), itemId, type, quantity:q, floorId:floorId || undefined, transactionId: transactionId || undefined, notes:note.trim() || undefined };
@@ -52,8 +56,11 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <h2>Material inventory</h2>
       <p className="muted">Receipt adds physical stock. Consumption, wastage and return reduce stock. This register never creates a financial expense; link existing bills below.</p>
       {items.length === 0 && <p className="muted">No materials added yet.</p>}
-      {items.map((i) => <div className="row" key={i.id}><div><b>{i.name}</b><small>Reorder below {i.reorderLevel} {i.unit}</small></div>
-        <strong className={(balances[i.id] || 0) <= i.reorderLevel ? 'negativeStock' : ''}>{(balances[i.id] || 0).toLocaleString('en-IN')} {i.unit}</strong>
+      {items.map((i) => <div className="suiteRecord" key={i.id}>
+        <div className="row"><div><b>{i.name}</b><small>Reorder at {i.reorderLevel} {i.unit}</small></div>
+          <strong className={(balances[i.id] || 0) <= i.reorderLevel ? 'negativeStock' : ''}>{(balances[i.id] || 0).toLocaleString('en-IN')} {i.unit}</strong>
+        </div>
+        <StockItemEditor item={i} items={items} hasMovements={moves.some((m)=>m.itemId===i.id)} patch={patch}/>
       </div>)}
     </section>
     <form className="panel form" onSubmit={addItem}><h2>Register material</h2><div className="grid3">
@@ -65,7 +72,7 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <h2>Log stock movement</h2><div className="grid2">
         <label>Material<select required value={itemId} onChange={(e)=>setItemId(e.target.value)}><option value="">Choose material</option>{items.map((i)=><option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}</select></label>
         <label>Movement<select value={type} onChange={(e)=>setType(e.target.value as StockMovement['type'])}>
-          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option>
+          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option><option value="CORRECTION_OUT">Verified stock correction (−)</option>
         </select></label>
         <label>Quantity<input required type="number" min="0.0001" step="any" value={quantity} onChange={(e)=>setQuantity(e.target.value)} /></label>
         <label>Floor / zone<select value={floorId} onChange={(e)=>setFloorId(e.target.value)}><option value="">Shared site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
@@ -80,6 +87,37 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <div><b>{items.find((i)=>i.id===m.itemId)?.name} · {m.type.replace('_',' ')}</b><small>{m.date} · {m.notes||'No notes'}</small></div><b>{['RECEIPT','CORRECTION_IN'].includes(m.type)?'+':'−'}{m.quantity}</b>
     </div>)}</section>
   </div>;
+}
+
+
+function StockItemEditor({item,items,hasMovements,patch}:{
+  item:StockItem;items:StockItem[];hasMovements:boolean;patch:UpdateSuite;
+}) {
+  const [draft,setDraft] = useState<StockItem>(item);
+  const [error,setError] = useState('');
+  useEffect(()=>setDraft(item),[item]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setError('');
+    if (!draft.name.trim() || !draft.unit.trim() || !Number.isFinite(draft.reorderLevel) || draft.reorderLevel < 0 ||
+      (draft.estimatedRequirement !== undefined && (!Number.isFinite(draft.estimatedRequirement) || draft.estimatedRequirement < 0))) {
+      setError('Enter material name, unit and non-negative quantities.');return;
+    }
+    if (hasMovements && draft.unit!==item.unit) {setError('Unit is locked once there are stock entries. Use a new item for a different unit.');return;}
+    await patch({stockItems:items.map((x)=>x.id===item.id?{...draft,name:draft.name.trim()}:x)});
+    setError('');
+  }
+  return <details className="editDetails"><summary>✎ Edit material details</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      <div className="grid2">
+        <label>Name<input value={draft.name} required onChange={(e)=>setDraft((x)=>({...x,name:e.target.value}))}/></label>
+        <label>Unit<input value={draft.unit} required disabled={hasMovements} onChange={(e)=>setDraft((x)=>({...x,unit:e.target.value}))}/></label>
+        <label>Reorder threshold<input type="number" min="0" step="any" value={draft.reorderLevel} onChange={(e)=>setDraft((x)=>({...x,reorderLevel:Number(e.target.value)}))}/></label>
+        <label>Estimated total requirement<input type="number" min="0" step="any" value={draft.estimatedRequirement??''} onChange={(e)=>setDraft((x)=>({...x,estimatedRequirement:e.target.value?Number(e.target.value):undefined}))}/></label>
+      </div>
+      {error&&<div className="error">{error}</div>}
+      <button className="primary" type="submit">Save material settings</button>
+    </form>
+  </details>;
 }
 
 export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
@@ -107,6 +145,12 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
     } catch(e) { setError(e instanceof Error?e.message:'Cannot save agreement'); } finally {setWorking(false);}
   }
   async function change(id:string, status: ContractorAgreement['status']) {
+    const old = agreements.find((a)=>a.id===id);
+    if (!old) return;
+    if (old.status === 'CLOSED' || (old.status === 'SIGNED' && status === 'DRAFT')) {
+      setError('Signed or closed agreements must be amended, not silently changed.'); return;
+    }
+    if (status === 'SIGNED' && old.status === 'DRAFT' && !window.confirm('Confirm the actual agreement was signed by both parties? This locks the signed terms.')) return;
     await patch({ agreements: agreements.map((a)=>a.id===id ? {...a,status} : a) });
   }
 
@@ -116,14 +160,20 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
       <p className="muted">Agreed values are commitments only. Actual advances and payments must be recorded separately in the Ledger and linked to the contractor.</p>
       {!state.contractors.length && <div className="warning">Add contractors in More → Vendors & contractors before creating agreements.</div>}
       {agreements.map((a)=>{
-        const paid = txs.filter((t)=>t.contractorId===a.contractorId && ['EXPENSE','ADVANCE','ADVANCE_ADJUSTMENT'].includes(t.type)).reduce((v,t)=>v + (t.type==='ADVANCE_ADJUSTMENT' ? 0 : t.amount),0);
+        const finances = agreementFinancials(txs,a.id);
         return <div className="suiteRecord" key={a.id}>
           <div className="sectionHead"><b>{a.title}</b><span className="status">{a.status}</span></div>
           <small className="muted">{state.contractors.find((x)=>x.id===a.contractorId)?.name||'Contractor'} · {money(a.value)} · Max advance {money(a.advanceLimit)}</small>
           <p>{a.scope}</p><small className="muted">Terms: {a.paymentTerms||'Not recorded'} · Retention {a.retentionPercent}%</small>
-          <small className="muted">All recorded ledger payments to this contractor: {money(paid)} (across all agreements; not contract-specific)</small>
+          <div className="grid3">
+            <div><small>Cash paid</small><b>{money(finances.cashPaid)}</b></div>
+            <div><small>Recognized work</small><b>{money(finances.recognizedWork)}</b></div>
+            <div><small>Outstanding advance</small><b>{money(finances.openAdvance)}</b></div>
+          </div>
+          <small className="muted">Only ledger transactions explicitly linked to this agreement are counted. Older unassigned contractor payments remain unallocated.</small>
           <AttachmentLinks refs={a.attachments} />
-          <select aria-label={'Agreement status: '+a.title} value={a.status} onChange={(e)=>change(a.id,e.target.value as ContractorAgreement['status'])}><option value="DRAFT">Draft</option><option value="SIGNED">Signed (confirm actual signatures)</option><option value="CLOSED">Closed</option></select>
+          <select disabled={a.status === 'CLOSED'} aria-label={'Agreement status: '+a.title} value={a.status} onChange={(e)=>change(a.id,e.target.value as ContractorAgreement['status'])}><option value="DRAFT" disabled={a.status !== 'DRAFT'}>Draft</option><option value="SIGNED">Signed (confirm actual signatures)</option><option value="CLOSED">Closed</option></select>
+          <AgreementEditor agreement={a} agreements={agreements} patch={patch} mode={mode} state={state} />
         </div>;
       })}
     </section>
@@ -147,6 +197,64 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
   </div>;
 }
 
+function AgreementEditor({ agreement, agreements, patch, mode, state }: {
+  agreement: ContractorAgreement; agreements: ContractorAgreement[]; patch: UpdateSuite;
+  mode: 'cloud'|'standalone'; state:ProjectState;
+}) {
+  const [draft,setDraft] = useState<ContractorAgreement>(agreement);
+  const [file,setFile] = useState<File|null>(null);
+  const [error,setError] = useState('');const [busy,setBusy] = useState(false);
+  useEffect(()=>setDraft(agreement),[agreement]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setError('');
+    if (agreement.status !== 'DRAFT') {setError('Signed terms are locked. Use a draft amendment.');return;}
+    if (!draft.title.trim() || !draft.scope.trim() || !Number.isFinite(draft.value) || draft.value < 0 ||
+        !Number.isFinite(draft.advanceLimit) || draft.advanceLimit < 0 || draft.advanceLimit > draft.value ||
+        !Number.isFinite(draft.retentionPercent) || draft.retentionPercent < 0 || draft.retentionPercent > 100 ||
+        (draft.endDate && draft.startDate && draft.endDate < draft.startDate)) {
+      setError('Check scope, dates, payment limit, value and retention.');return;
+    }
+    setBusy(true);
+    try {
+      const attachments=[...draft.attachments];
+      if (file) attachments.push(await saveEvidence(file,mode));
+      await patch({agreements:agreements.map((a)=>a.id===agreement.id?{...draft,attachments}:a)});
+      setFile(null);setError('');
+    }catch(e){setError(e instanceof Error?e.message:'Could not update agreement');}finally{setBusy(false);}
+  }
+  async function amend() {
+    if (!window.confirm('Create a new DRAFT amendment linked to this signed agreement? Original signed terms stay unchanged.')) return;
+    await patch({agreements:[...agreements,{
+      ...agreement,id:crypto.randomUUID(),parentAgreementId:agreement.id,
+      title:'Amendment: '+agreement.title,status:'DRAFT',attachments:[],
+    }]});
+  }
+  if (agreement.status !== 'DRAFT') {
+    return <button className="secondary small" type="button" onClick={amend}>+ Create draft amendment</button>;
+  }
+  return <details className="editDetails"><summary>✎ Edit agreement draft</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      {agreement.parentAgreementId && <small className="muted">Amendment to: {agreement.parentAgreementId}</small>}
+      <label>Contractor<select value={draft.contractorId} onChange={(e)=>setDraft((s)=>({...s,contractorId:e.target.value}))}>
+        {state.contractors.map((c)=><option value={c.id} key={c.id}>{c.name}</option>)}
+      </select></label>
+      <label>Title<input required value={draft.title} onChange={(e)=>setDraft((s)=>({...s,title:e.target.value}))}/></label>
+      <label>Scope of work<textarea required value={draft.scope} onChange={(e)=>setDraft((s)=>({...s,scope:e.target.value}))}/></label>
+      <div className="grid3">
+        <label>Agreed ₹<input type="number" min="0" step="0.01" value={draft.value} onChange={(e)=>setDraft((s)=>({...s,value:Number(e.target.value)}))}/></label>
+        <label>Maximum advance ₹<input type="number" min="0" step="0.01" value={draft.advanceLimit} onChange={(e)=>setDraft((s)=>({...s,advanceLimit:Number(e.target.value)}))}/></label>
+        <label>Retention %<input type="number" min="0" max="100" value={draft.retentionPercent} onChange={(e)=>setDraft((s)=>({...s,retentionPercent:Number(e.target.value)}))}/></label>
+        <label>Start<input type="date" value={draft.startDate||''} onChange={(e)=>setDraft((s)=>({...s,startDate:e.target.value}))}/></label>
+        <label>Finish<input type="date" value={draft.endDate||''} onChange={(e)=>setDraft((s)=>({...s,endDate:e.target.value}))}/></label>
+      </div>
+      <label>Milestone payment terms<textarea value={draft.paymentTerms} onChange={(e)=>setDraft((s)=>({...s,paymentTerms:e.target.value}))}/></label>
+      <label>Add quotation / signed paper (8 MB max)<input type="file" accept="image/*,application/pdf" onChange={(e)=>setFile(e.target.files?.[0]||null)}/></label>
+      <AttachmentLinks refs={draft.attachments} />
+      <ErrorLine message={error}/><button className="primary" type="submit" disabled={busy}>{busy?'Saving…':'Save draft changes'}</button>
+    </form>
+  </details>;
+}
+
 export function ProgressView({state,patch,mode}:ChildProps) {
   const { progress }=state.construction;
   const [floorId,setFloorId]=useState(''); const [phaseId,setPhaseId]=useState('');
@@ -161,7 +269,7 @@ export function ProgressView({state,patch,mode}:ChildProps) {
     try {
       const attachments:AttachmentRef[]=[];
       for(const file of files) attachments.push(await saveEvidence(file,mode));
-      const entry:ProgressEntry={id:crypto.randomUUID(),date,floorId:floorId||undefined,phaseId:phaseId||undefined,taskId:taskId||undefined,progressPercent:p,notes:notes.trim(),attachments};
+      const entry:ProgressEntry={id:crypto.randomUUID(),createdAt:new Date().toISOString(),date,floorId:floorId||undefined,phaseId:phaseId||undefined,taskId:taskId||undefined,progressPercent:p,notes:notes.trim(),attachments};
       await patch({ progress:[...progress,entry] });
       setNotes('');setFiles([]);setError('');
     } catch(e){setError(e instanceof Error?e.message:'Unable to save progress');} finally{setWorking(false);}
@@ -183,13 +291,64 @@ export function ProgressView({state,patch,mode}:ChildProps) {
     </form>
     <section className="panel"><h2>Site progress timeline</h2>
       {!progress.length && <p className="muted">No site updates yet.</p>}
-      {[...progress].reverse().sort((a,b)=>b.date.localeCompare(a.date)).map((p)=><div className="suiteRecord" key={p.id}>
+      {[...progress].reverse().sort((a,b)=>(b.createdAt||b.date).localeCompare(a.createdAt||a.date)).map((p)=><div className="suiteRecord" key={p.id}>
         <div className="sectionHead"><b>{p.date}</b><span className="status">{p.progressPercent}% noted</span></div>
         <small className="muted">{state.construction.floors.find((f)=>f.id===p.floorId)?.name||'Site'} · {state.phases.find((x)=>x.id===p.phaseId)?.name||'General'}</small>
+        {p.supersedesId && <small className="muted">Correction of earlier progress entry {p.supersedesId}</small>}
+        {progress.some((x)=>x.supersedesId===p.id) && <small className="warning">A later correction replaces this observation. The original is retained for audit.</small>}
         <p>{p.notes}</p><AttachmentLinks refs={p.attachments}/>
+        {!progress.some((x)=>x.supersedesId===p.id) && <ProgressCorrector original={p} state={state} patch={patch} mode={mode} />}
       </div>)}
     </section>
   </div>;
+}
+
+
+function ProgressCorrector({original,state,patch,mode}:{
+  original:ProgressEntry;state:ProjectState;patch:UpdateSuite;mode:'cloud'|'standalone';
+}) {
+  const [date,setDate]=useState(original.date);
+  const [percent,setPercent]=useState(String(original.progressPercent));
+  const [notes,setNotes]=useState(original.notes);
+  const [floorId,setFloorId]=useState(original.floorId||'');
+  const [phaseId,setPhaseId]=useState(original.phaseId||'');
+  const [file,setFile]=useState<File|null>(null);
+  const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+  async function correct(e:React.FormEvent){
+    e.preventDefault();
+    const p=Number(percent);
+    if(!notes.trim() || !Number.isFinite(p) || p<0 || p>100 || !date){
+      setError('Enter valid corrected date, percentage and notes.');return;
+    }
+    if(!window.confirm('Append a correcting record? The original site diary entry and its photos remain available.')) return;
+    setBusy(true);
+    try {
+      const attachments:AttachmentRef[]=[];
+      if(file) attachments.push(await saveEvidence(file,mode));
+      const corrected:ProgressEntry={
+        id:crypto.randomUUID(),createdAt:new Date().toISOString(),supersedesId:original.id,
+        date,progressPercent:p,notes:notes.trim(),
+        floorId:floorId||undefined,phaseId:phaseId||undefined,
+        taskId:original.taskId,attachments,
+      };
+      await patch({progress:[...state.construction.progress,corrected]});
+      setError('');
+    }catch(e){setError(e instanceof Error?e.message:'Could not save correction');}finally{setBusy(false);}
+  }
+  return <details className="editDetails"><summary>✎ Correct this progress record</summary>
+    <form className="form detailsBody" onSubmit={correct}>
+      <p className="muted">This creates a dated correction. It does not rewrite or delete the previous observation.</p>
+      <div className="grid2">
+        <label>Corrected observation date<input type="date" required value={date} onChange={(e)=>setDate(e.target.value)}/></label>
+        <label>Corrected progress %<input type="number" min="0" max="100" value={percent} onChange={(e)=>setPercent(e.target.value)}/></label>
+        <label>Floor<select value={floorId} onChange={(e)=>setFloorId(e.target.value)}><option value="">Site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+        <label>Phase<select value={phaseId} onChange={(e)=>setPhaseId(e.target.value)}><option value="">General</option>{state.phases.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      </div>
+      <label>Corrected observations and reason<textarea required value={notes} onChange={(e)=>setNotes(e.target.value)}/></label>
+      <label>Replacement photo / PDF (optional)<input type="file" accept="image/*,application/pdf" onChange={(e)=>setFile(e.target.files?.[0]||null)}/></label>
+      <ErrorLine message={error}/><button className="primary" disabled={busy} type="submit">Save append-only correction</button>
+    </form>
+  </details>;
 }
 
 export function FinanceView({state,txs}:ChildProps){
@@ -212,7 +371,7 @@ export function FinanceView({state,txs}:ChildProps){
   const baseMonth=new Date();baseMonth.setDate(1);
   const forecast=Array.from({length:6},(_,i)=>{
     const d=new Date(baseMonth.getFullYear(),baseMonth.getMonth()+i,1);
-    const key=d.toISOString().slice(0,7);
+    const key=d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     const planned=state.construction.schedule.filter((t)=>t.status!=='COMPLETED' && t.endDate.slice(0,7)===key).reduce((s,t)=>s+t.estimatedCost,0);
     const inflow=(validNumber(monthly)||0) + ((i+1)%6===0 ? (validNumber(semiannual)||0) : 0);
     const emiOutflow=validNumber(monthlyEmi)||0;
@@ -279,7 +438,10 @@ export function RemindersView({state,patch}:ChildProps){
     setTitle('');setError('');
   }
   async function mark(id:string,completed:boolean){
-    await patch({reminders:reminders.map((r)=>r.id===id?{...r,completed}:r)});
+    const month=dateNow().slice(0,7);
+    await patch({reminders:reminders.map((r)=>r.id===id
+      ? r.repeat === 'MONTHLY' ? {...r,completed:false,lastCompletedMonth:completed?month:undefined} : {...r,completed}
+      : r)});
   }
   async function allowNotifications(){
     if(nativeBridge) {
@@ -303,7 +465,8 @@ export function RemindersView({state,patch}:ChildProps){
       {reminders.slice().sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).map((r)=><div className="suiteRecord" key={r.id}>
         <div className="sectionHead"><b>{r.title}</b><span className="status">{r.category}</span></div>
         <small className="muted">{r.dueDate} · {r.repeat==='MONTHLY'?'Every month':'Once'}</small>
-        <label className="check"><input type="checkbox" checked={r.completed} onChange={(e)=>mark(r.id,e.target.checked)}/>Done</label>
+        <label className="check"><input type="checkbox" checked={r.repeat === 'MONTHLY' ? r.lastCompletedMonth === dateNow().slice(0,7) : r.completed} onChange={(e)=>mark(r.id,e.target.checked)}/> {r.repeat === 'MONTHLY' ? 'Done this month' : 'Completed'}</label>
+        <ReminderEditor reminder={r} reminders={reminders} patch={patch}/>
       </div>)}
     </section>
     <form className="panel form" onSubmit={add}><h2>New reminder</h2>
@@ -318,6 +481,39 @@ export function RemindersView({state,patch}:ChildProps){
       <ErrorLine message={error}/><button className="primary" type="submit">Add reminder</button>
     </form>
   </div>;
+}
+
+
+function ReminderEditor({reminder,reminders,patch}:{
+  reminder:ProjectReminder;reminders:ProjectReminder[];patch:UpdateSuite;
+}) {
+  const [draft,setDraft]=useState<ProjectReminder>(reminder);
+  const [error,setError]=useState('');
+  useEffect(()=>setDraft(reminder),[reminder]);
+  async function save(e:React.FormEvent){
+    e.preventDefault();
+    if(!draft.title.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)){
+      setError('Enter a valid reminder title and due date.');return;
+    }
+    await patch({reminders:reminders.map((r)=>r.id===reminder.id?{...draft,title:draft.title.trim()}:r)});
+    setError('');
+  }
+  return <details className="editDetails"><summary>✎ Edit reminder</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      <label>Title<input required value={draft.title} onChange={(e)=>setDraft((r)=>({...r,title:e.target.value}))}/></label>
+      <div className="grid3">
+        <label>Due date<input type="date" required value={draft.dueDate} onChange={(e)=>setDraft((r)=>({...r,dueDate:e.target.value}))}/></label>
+        <label>Category<select value={draft.category} onChange={(e)=>setDraft((r)=>({...r,category:e.target.value as ProjectReminder['category']}))}>
+          <option value="EMI">EMI</option><option value="PAYMENT">Payment</option><option value="DELIVERY">Delivery</option><option value="WORK">Work</option><option value="OTHER">Other</option>
+        </select></label>
+        <label>Repeat<select value={draft.repeat} onChange={(e)=>setDraft((r)=>({...r,repeat:e.target.value as ProjectReminder['repeat']}))}>
+          <option value="NONE">Once</option><option value="MONTHLY">Monthly</option>
+        </select></label>
+      </div>
+      <label>Notes<textarea value={draft.notes||''} onChange={(e)=>setDraft((r)=>({...r,notes:e.target.value}))}/></label>
+      <ErrorLine message={error}/><button className="primary" type="submit">Save reminder changes</button>
+    </form>
+  </details>;
 }
 
 function parseText(raw:string) {

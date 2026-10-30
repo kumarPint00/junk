@@ -93,9 +93,11 @@ public final class NativeReminderBridge {
                     if (date.length() != 10) continue;
                     LocalDate due = LocalDate.parse(date);
                     boolean monthly = "MONTHLY".equals(item.optString("repeat"));
+                    String currentMonth = java.time.YearMonth.now().toString();
+                    boolean doneThisMonth = monthly && currentMonth.equals(item.optString("lastCompletedMonth"));
                     String category = item.optString("category", "WORK");
                     newIds.add(id);
-                    scheduleOne(activity, id, title, category, due, monthly, false);
+                    scheduleOne(activity, id, title, category, due, monthly, doneThisMonth);
                 }
                 for (String id : oldIds) {
                     if (!newIds.contains(id)) cancelOne(activity, id);
