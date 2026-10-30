@@ -1,21 +1,23 @@
 {
-  "name": "Plot to Ghar",
-  "short_name": "PlotToGhar",
   "id": "/",
+  "name": "Plot to Ghar",
+  "short_name": "Plot to Ghar",
+  "description": "Manage your plot purchase, registry, construction expenses, loans, materials, contractors and progress.",
+  "lang": "en-IN",
+  "dir": "ltr",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
   "background_color": "#07101e",
   "theme_color": "#07101e",
-  "description": "Private plot purchase and building construction finance manager",
   "categories": ["finance", "productivity"],
   "icons": [
-    {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "prefer_related_applications": false
 }

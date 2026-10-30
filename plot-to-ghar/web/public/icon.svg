@@ -1,7 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#07101e"/>
-  <path d="M88 244 256 104l168 140v174a26 26 0 0 1-26 26H114a26 26 0 0 1-26-26V244Z" fill="#6ee7b7"/>
-  <path d="M176 444V286h160v158" fill="#17344c"/>
-  <path d="M228 444v-98h56v98" fill="#f6f8fb"/>
-  <path d="M66 250 256 90l190 160" fill="none" stroke="#38bdf8" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Plot to Ghar house and construction icon">
+<defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#122C43"/><stop offset="1" stop-color="#07101E"/></linearGradient><linearGradient id="roof" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#67F7C6"/><stop offset="1" stop-color="#17B890"/></linearGradient></defs>
+<rect width="512" height="512" rx="112" fill="url(#bg)"/>
+<path d="M82 394H430" stroke="#1C3851" stroke-width="12" stroke-linecap="round"/>
+<path d="M374 153V112H412M374 129H441" fill="none" stroke="#8CD8F2" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M420 132V194" stroke="#8CD8F2" stroke-width="11" stroke-linecap="round"/>
+<path d="M420 194q0 20-20 20" fill="none" stroke="#8CD8F2" stroke-width="10" stroke-linecap="round"/>
+<path d="M148 258L256 169L364 258V383H148Z" fill="#F1F8FB"/>
+<path d="M130 260L256 150L382 260" fill="none" stroke="url(#roof)" stroke-width="31" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="211" y="290" width="90" height="93" rx="10" fill="#103049"/>
+<path d="M256 296V383" stroke="#1C4962" stroke-width="6"/>
+<circle cx="242" cy="340" r="5" fill="#69E9C0"/>
+<rect x="162" y="277" width="37" height="42" rx="7" fill="#16A587"/>
+<path d="M180 280V316M164 298H197" stroke="#F1F8FB" stroke-width="5"/>
+<rect x="313" y="277" width="37" height="42" rx="7" fill="#16A587"/>
+<path d="M332 280V316M315 298H348" stroke="#F1F8FB" stroke-width="5"/>
+<path d="M116 398H396" stroke="#39DCAB" stroke-width="19" stroke-linecap="round"/>
 </svg>

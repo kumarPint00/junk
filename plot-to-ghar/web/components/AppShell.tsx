@@ -475,7 +475,7 @@ export function AppShell() {
     return (
       <main className="login">
         <section className="loginCard">
-          <div className="brandMark">🏠</div>
+          <img className="brandImage" src="/icon.svg" width={72} height={72} alt="Plot to Ghar" />
           <h1>Set up Plot to Ghar</h1>
           <p>Your data will be stored on this device. Create a PIN to protect access.</p>
           <form onSubmit={setupPin}>
@@ -530,9 +530,10 @@ export function AppShell() {
   return (
     <div className="app">
       <header>
-        <div>
-          <strong>{state.project.name}</strong>
-          <small>{state.project.status.replaceAll('_', ' ')}</small>
+        <div className="brandIdentity">
+          <img src="/icon.svg" width={36} height={36} alt="" aria-hidden="true" />
+          <div><strong>{state.project.name}</strong>
+          <small>{state.project.status.replaceAll('_', ' ')}</small></div>
         </div>
         <span className={online ? 'online' : 'offline'}>
           {mode === 'standalone' ? '● On-device' : online ? '● Cloud' : '● Offline'}
