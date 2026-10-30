@@ -41,6 +41,7 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
     e.preventDefault();
     const q = validNumber(quantity, Number.EPSILON);
     if (!itemId || !Number.isFinite(q) || q <= 0) { setError('Choose material and positive quantity.'); return; }
+    if (type.startsWith('CORRECTION_') && note.trim().length < 8) { setError('Explain the reason for this inventory correction (8+ characters).'); return; }
     const sign = ['RECEIPT','CORRECTION_IN'].includes(type) ? 1 : -1;
     if ((balances[itemId] || 0) + sign * q < -0.000001) { setError('Not enough stock for this movement.'); return; }
     const entry: StockMovement = { id: crypto.randomUUID(), date: dateNow(), itemId, type, quantity:q, floorId:floorId || undefined, transactionId: transactionId || undefined, notes:note.trim() || undefined };
@@ -52,8 +53,11 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <h2>Material inventory</h2>
       <p className="muted">Receipt adds physical stock. Consumption, wastage and return reduce stock. This register never creates a financial expense; link existing bills below.</p>
       {items.length === 0 && <p className="muted">No materials added yet.</p>}
-      {items.map((i) => <div className="row" key={i.id}><div><b>{i.name}</b><small>Reorder below {i.reorderLevel} {i.unit}</small></div>
-        <strong className={(balances[i.id] || 0) <= i.reorderLevel ? 'negativeStock' : ''}>{(balances[i.id] || 0).toLocaleString('en-IN')} {i.unit}</strong>
+      {items.map((i) => <div className="suiteRecord" key={i.id}>
+        <div className="row"><div><b>{i.name}</b><small>Reorder at {i.reorderLevel} {i.unit}</small></div>
+          <strong className={(balances[i.id] || 0) <= i.reorderLevel ? 'negativeStock' : ''}>{(balances[i.id] || 0).toLocaleString('en-IN')} {i.unit}</strong>
+        </div>
+        <StockItemEditor item={i} items={items} hasMovements={moves.some((m)=>m.itemId===i.id)} patch={patch}/>
       </div>)}
     </section>
     <form className="panel form" onSubmit={addItem}><h2>Register material</h2><div className="grid3">
@@ -65,7 +69,7 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <h2>Log stock movement</h2><div className="grid2">
         <label>Material<select required value={itemId} onChange={(e)=>setItemId(e.target.value)}><option value="">Choose material</option>{items.map((i)=><option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}</select></label>
         <label>Movement<select value={type} onChange={(e)=>setType(e.target.value as StockMovement['type'])}>
-          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option>
+          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option><option value="CORRECTION_OUT">Verified stock correction (−)</option>
         </select></label>
         <label>Quantity<input required type="number" min="0.0001" step="any" value={quantity} onChange={(e)=>setQuantity(e.target.value)} /></label>
         <label>Floor / zone<select value={floorId} onChange={(e)=>setFloorId(e.target.value)}><option value="">Shared site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
@@ -80,6 +84,37 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <div><b>{items.find((i)=>i.id===m.itemId)?.name} · {m.type.replace('_',' ')}</b><small>{m.date} · {m.notes||'No notes'}</small></div><b>{['RECEIPT','CORRECTION_IN'].includes(m.type)?'+':'−'}{m.quantity}</b>
     </div>)}</section>
   </div>;
+}
+
+
+function StockItemEditor({item,items,hasMovements,patch}:{
+  item:StockItem;items:StockItem[];hasMovements:boolean;patch:UpdateSuite;
+}) {
+  const [draft,setDraft] = useState<StockItem>(item);
+  const [error,setError] = useState('');
+  useEffect(()=>setDraft(item),[item]);
+  async function save(e:React.FormEvent) {
+    e.preventDefault();setError('');
+    if (!draft.name.trim() || !draft.unit.trim() || !Number.isFinite(draft.reorderLevel) || draft.reorderLevel < 0 ||
+      (draft.estimatedRequirement !== undefined && (!Number.isFinite(draft.estimatedRequirement) || draft.estimatedRequirement < 0))) {
+      setError('Enter material name, unit and non-negative quantities.');return;
+    }
+    if (hasMovements && draft.unit!==item.unit) {setError('Unit is locked once there are stock entries. Use a new item for a different unit.');return;}
+    await patch({stockItems:items.map((x)=>x.id===item.id?{...draft,name:draft.name.trim()}:x)});
+    setError('');
+  }
+  return <details className="editDetails"><summary>✎ Edit material details</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      <div className="grid2">
+        <label>Name<input value={draft.name} required onChange={(e)=>setDraft((x)=>({...x,name:e.target.value}))}/></label>
+        <label>Unit<input value={draft.unit} required disabled={hasMovements} onChange={(e)=>setDraft((x)=>({...x,unit:e.target.value}))}/></label>
+        <label>Reorder threshold<input type="number" min="0" step="any" value={draft.reorderLevel} onChange={(e)=>setDraft((x)=>({...x,reorderLevel:Number(e.target.value)}))}/></label>
+        <label>Estimated total requirement<input type="number" min="0" step="any" value={draft.estimatedRequirement??''} onChange={(e)=>setDraft((x)=>({...x,estimatedRequirement:e.target.value?Number(e.target.value):undefined}))}/></label>
+      </div>
+      {error&&<div className="error">{error}</div>}
+      <button className="primary" type="submit">Save material settings</button>
+    </form>
+  </details>;
 }
 
 export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
