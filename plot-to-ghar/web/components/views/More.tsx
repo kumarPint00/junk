@@ -245,7 +245,7 @@ export function More({
         </button>
         <div className="restore">
           <input type="file" accept="application/json" onChange={(e) => setRestore(e.target.files?.[0] || null)} />
-          <button className="danger" disabled={!restore} onClick={doRestore}>Restore backup</button>
+          <button className="danger" disabled={!restore} onClick={() => doRestore().catch((e)=>alert(e instanceof Error ? e.message : 'Restore failed. No data was changed.'))}>Restore backup</button>
         </div>
       </section>
 
