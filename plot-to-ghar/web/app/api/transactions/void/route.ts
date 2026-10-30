@@ -27,6 +27,7 @@ export async function POST(req: Request) {
       );
     }
 
+    const [state, transactions] = await Promise.all([getState(), listTransactions()]);
     const existingSettlements = transactions.filter((x) => x.linkedTransactionId === old.id && ['REFUND', 'ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(x.type));
     if (existingSettlements.length) throw new Error('This entry has linked settlements or refunds; reverse them through dedicated correcting entries before voiding.');
     const type = reversalType(old.type);
@@ -56,7 +57,6 @@ export async function POST(req: Request) {
       linkedTransactionId: old.type === 'ADVANCE' || old.type === 'EXPENSE' ? old.id : undefined,
     };
 
-    const [state, transactions] = await Promise.all([getState(), listTransactions()]);
     validateTx(t, { state, transactions });
     await putTransaction(t);
     return NextResponse.json({ transaction: t }, { headers: { 'Cache-Control': 'no-store' } });
