@@ -25,17 +25,26 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
   const [quantity, setQuantity] = useState(''); const [floorId, setFloorId] = useState('');
   const [transactionId, setTransactionId] = useState(''); const [note, setNote] = useState('');
   const [error, setError] = useState('');
+  const [editingMaterialId, setEditingMaterialId] = useState<string | null>(null);
   const balances = useMemo(() => stockBalances(items, moves), [items, moves]);
   const purchaseTxs = txs.filter((t) => ['EXPENSE', 'DIRECT_FUNDED_EXPENSE', 'ADVANCE_ADJUSTMENT'].includes(t.type) && !t.reversalOf);
   async function addItem(e: React.FormEvent) {
     e.preventDefault();
     const r = validNumber(reorder);
-    if (!name.trim() || !unit.trim() || !Number.isFinite(r) || items.some((x) => x.name.toLowerCase() === name.trim().toLowerCase() && x.unit.toLowerCase() === unit.trim().toLowerCase())) {
+    if (!name.trim() || !unit.trim() || !Number.isFinite(r) || items.some((x) => x.id !== editingMaterialId && x.name.toLowerCase() === name.trim().toLowerCase() && x.unit.toLowerCase() === unit.trim().toLowerCase())) {
       setError('Use a unique item+unit name and non-negative reorder point.'); return;
     }
-    const item = { id: crypto.randomUUID(), name: name.trim(), unit: unit.trim(), reorderLevel: r };
-    await patch({ stockItems: [...items, item] });
-    setName(''); setError(''); setItemId(item.id);
+    const existing = items.find(x => x.id === editingMaterialId);
+    if (existing && moves.some(x=>x.itemId===existing.id) && existing.unit !== unit.trim()) {
+      setError('Cannot change units after stock movements exist; create a new material if the unit differs.'); return;
+    }
+    const item = { id: existing?.id || crypto.randomUUID(), name: name.trim(), unit: unit.trim(), reorderLevel: r };
+    await patch({ stockItems: existing ? items.map(x=>x.id===existing.id?item:x) : [...items, item] });
+    setName(''); setError(''); setItemId(item.id); setEditingMaterialId(null);
+  }
+  function editMaterial(item: StockItem) {
+    setEditingMaterialId(item.id);setName(item.name);setUnit(item.unit);setReorder(String(item.reorderLevel));setError('');
+    document.getElementById('ptg-material-form')?.scrollIntoView({behavior:'smooth',block:'start'});
   }
   async function addMove(e: React.FormEvent) {
     e.preventDefault();
@@ -52,20 +61,21 @@ export function MaterialsView({ state, txs, patch }: ChildProps) {
       <h2>Material inventory</h2>
       <p className="muted">Receipt adds physical stock. Consumption, wastage and return reduce stock. This register never creates a financial expense; link existing bills below.</p>
       {items.length === 0 && <p className="muted">No materials added yet.</p>}
-      {items.map((i) => <div className="row" key={i.id}><div><b>{i.name}</b><small>Reorder below {i.reorderLevel} {i.unit}</small></div>
+      {items.map((i) => <div className="row materialStockRow" key={i.id}><div><b>{i.name}</b><small>Reorder below {i.reorderLevel} {i.unit}</small></div>
         <strong className={(balances[i.id] || 0) <= i.reorderLevel ? 'negativeStock' : ''}>{(balances[i.id] || 0).toLocaleString('en-IN')} {i.unit}</strong>
+        <button type="button" className="secondary small" onClick={()=>editMaterial(i)}>Edit</button>
       </div>)}
     </section>
-    <form className="panel form" onSubmit={addItem}><h2>Register material</h2><div className="grid3">
+    <form id="ptg-material-form" className="panel form" onSubmit={addItem}><h2>{editingMaterialId ? 'Edit material' : 'Register material'}</h2><div className="grid3">
       <label>Material<input required value={name} onChange={(e)=>setName(e.target.value)} placeholder="Cement OPC 43" /></label>
       <label>Unit<input required value={unit} onChange={(e)=>setUnit(e.target.value)} placeholder="bag / kg / pcs" /></label>
       <label>Reorder point<input type="number" min="0" step="any" value={reorder} onChange={(e)=>setReorder(e.target.value)} /></label>
-    </div><ErrorLine message={error} /><button className="primary" type="submit">Add material</button></form>
+    </div><ErrorLine message={error} /><div className="formActions"><button className="primary" type="submit">{editingMaterialId?'Save material changes':'Add material'}</button>{editingMaterialId && <button className="secondary" type="button" onClick={()=>{setEditingMaterialId(null);setName('');setUnit('bag');setReorder('0');setError('');}}>Cancel edit</button>}</div></form>
     <form className="panel form" onSubmit={addMove}>
       <h2>Log stock movement</h2><div className="grid2">
         <label>Material<select required value={itemId} onChange={(e)=>setItemId(e.target.value)}><option value="">Choose material</option>{items.map((i)=><option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}</select></label>
         <label>Movement<select value={type} onChange={(e)=>setType(e.target.value as StockMovement['type'])}>
-          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option>
+          <option value="RECEIPT">Received from vendor</option><option value="CONSUMPTION">Used at site</option><option value="WASTAGE">Wasted / damaged</option><option value="RETURN">Returned to vendor</option><option value="CORRECTION_IN">Verified stock correction (+)</option><option value="CORRECTION_OUT">Verified stock correction (−)</option>
         </select></label>
         <label>Quantity<input required type="number" min="0.0001" step="any" value={quantity} onChange={(e)=>setQuantity(e.target.value)} /></label>
         <label>Floor / zone<select value={floorId} onChange={(e)=>setFloorId(e.target.value)}><option value="">Shared site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
@@ -91,7 +101,14 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
   const [start, setStart] = useState(''); const [end, setEnd] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
   const [error, setError] = useState(''); const [working, setWorking] = useState(false);
+  const [editingAgreementId, setEditingAgreementId] = useState<string | null>(null);
 
+  function editAgreement(a: ContractorAgreement) {
+    setEditingAgreementId(a.id);setContractor(a.contractorId);setTitle(a.title);setScope(a.scope);
+    setValue(String(a.value));setAdvanceLimit(String(a.advanceLimit));setRetention(String(a.retentionPercent));
+    setTerms(a.paymentTerms);setStart(a.startDate||'');setEnd(a.endDate||'');setAttachment(null);setError('');
+    document.getElementById('ptg-agreement-form')?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
   async function add(e: React.FormEvent) {
     e.preventDefault();
     const v = validNumber(value), a = validNumber(advanceLimit), r = validNumber(retention);
@@ -100,13 +117,22 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
     }
     setWorking(true);
     try {
-      const files = attachment ? [await saveEvidence(attachment, mode)] : [];
-      const agreement: ContractorAgreement = { id: crypto.randomUUID(), contractorId: contractor, title:title.trim(), scope:scope.trim(), value:v, advanceLimit:a, retentionPercent:r, startDate:start||undefined, endDate:end||undefined, paymentTerms:terms.trim(), status:'DRAFT', attachments:files };
-      await patch({ agreements:[...agreements,agreement] });
-      setTitle(''); setScope(''); setValue(''); setAttachment(null); setTerms(''); setError('');
+      const original = agreements.find(a=>a.id===editingAgreementId);
+      const files = original ? [...original.attachments] : [];
+      if(attachment) files.push(await saveEvidence(attachment, mode));
+      const agreement: ContractorAgreement = {
+        id: original?.id || crypto.randomUUID(), contractorId: contractor, title:title.trim(),
+        scope:scope.trim(), value:v, advanceLimit:a, retentionPercent:r, startDate:start||undefined,
+        endDate:end||undefined, paymentTerms:terms.trim(),
+        status: original?.status === 'SIGNED' ? 'DRAFT' : original?.status || 'DRAFT', attachments: files
+      };
+      await patch({ agreements:original ? agreements.map(a=>a.id===original.id?agreement:a) : [...agreements,agreement] });
+      setTitle(''); setScope(''); setValue(''); setAttachment(null); setTerms(''); setError('');setEditingAgreementId(null);
     } catch(e) { setError(e instanceof Error?e.message:'Cannot save agreement'); } finally {setWorking(false);}
   }
   async function change(id:string, status: ContractorAgreement['status']) {
+    const agreement=agreements.find(a=>a.id===id);
+    if(status==='SIGNED' && agreement && !window.confirm('Have both parties signed the final agreed terms? Update status only if this is confirmed.')) return;
     await patch({ agreements: agreements.map((a)=>a.id===id ? {...a,status} : a) });
   }
 
@@ -123,12 +149,14 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
           <p>{a.scope}</p><small className="muted">Terms: {a.paymentTerms||'Not recorded'} · Retention {a.retentionPercent}%</small>
           <small className="muted">All recorded ledger payments to this contractor: {money(paid)} (across all agreements; not contract-specific)</small>
           <AttachmentLinks refs={a.attachments} />
+          <div className="taskActions"><button className="secondary small" type="button" onClick={()=>editAgreement(a)}>Edit agreement</button></div>
           <select aria-label={'Agreement status: '+a.title} value={a.status} onChange={(e)=>change(a.id,e.target.value as ContractorAgreement['status'])}><option value="DRAFT">Draft</option><option value="SIGNED">Signed (confirm actual signatures)</option><option value="CLOSED">Closed</option></select>
         </div>;
       })}
     </section>
-    <form className="panel form" onSubmit={add}>
-      <h2>New agreement record</h2>
+    <form id="ptg-agreement-form" className="panel form" onSubmit={add}>
+      <h2>{editingAgreementId ? 'Edit agreement' : 'New agreement record'}</h2>
+      {editingAgreementId && agreements.find(a=>a.id===editingAgreementId)?.status==='SIGNED' && <p className="warning">Changing a signed agreement will reset its status to Draft. Obtain signatures again on the revised terms.</p>}
       <label>Contractor<select required value={contractor} onChange={(e)=>setContractor(e.target.value)}><option value="">Choose contractor</option>{state.contractors.map((c)=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
       <label>Work title<input required value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="RCC labour agreement" /></label>
       <label>Scope of work<textarea required value={scope} onChange={(e)=>setScope(e.target.value)} placeholder="Materials included/excluded, work measurements and quality expectations" /></label>
@@ -142,7 +170,7 @@ export function AgreementsView({ state, patch, mode, txs }: ChildProps) {
       <label>Milestone / payment terms<textarea value={terms} onChange={(e)=>setTerms(e.target.value)} placeholder="20% after plinth, 30% after slab..." /></label>
       <label>Signed agreement / quotation (PDF or image)<input type="file" accept="image/*,application/pdf" onChange={(e)=>setAttachment(e.target.files?.[0]||null)} /></label>
       <ErrorLine message={error} />
-      <button className="primary" disabled={working||!state.contractors.length} type="submit">{working?'Saving…':'Save agreement draft'}</button>
+      <div className="formActions"><button className="primary" disabled={working||!state.contractors.length} type="submit">{working?'Saving…':editingAgreementId?'Save agreement changes':'Save agreement draft'}</button>{editingAgreementId && <button type="button" className="secondary" onClick={()=>{setEditingAgreementId(null);setTitle('');setScope('');setValue('');setAttachment(null);}}>Cancel</button>}</div>
     </form>
   </div>;
 }
