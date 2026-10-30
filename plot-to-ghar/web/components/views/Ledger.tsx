@@ -1,0 +1,143 @@
+'use client';
+
+import { useMemo, useState } from 'react';
+import type { ProjectState, Transaction, TxType } from '@/lib/types';
+import { money, PageTitle } from '@/components/ui';
+
+function csvCell(value: unknown) {
+  const raw = String(value ?? '');
+  const safe = /^[=+\-@]/.test(raw) ? "'" + raw : raw;
+  return '"' + safe.replaceAll('"', '""') + '"';
+}
+
+export function Ledger({
+  state,
+  txs,
+  onVoid,
+}: {
+  state: ProjectState;
+  txs: Transaction[];
+  onVoid: (id: string) => Promise<void>;
+}) {
+  const [q, setQ] = useState('');
+  const [type, setType] = useState<'ALL' | TxType>('ALL');
+  const [phase, setPhase] = useState('ALL');
+
+  const reversed = useMemo(() => new Set(txs.map((t) => t.reversalOf).filter(Boolean)), [txs]);
+  const accountName = (id?: string) => state.accounts.find((a) => a.id === id)?.name || '';
+  const phaseName = (id?: string) => state.phases.find((p) => p.id === id)?.name || '';
+  const vendorName = (id?: string) => state.vendors.find((p) => p.id === id)?.name || '';
+  const contractorName = (id?: string) => state.contractors.find((p) => p.id === id)?.name || '';
+
+  const rows = [...txs]
+    .reverse()
+    .filter((t) => type === 'ALL' || t.type === type)
+    .filter((t) => phase === 'ALL' || t.phaseId === phase)
+    .filter((t) => JSON.stringify(t).toLowerCase().includes(q.toLowerCase()));
+
+  function exportCsv() {
+    const header = ['Date', 'Type', 'Cost bucket', 'Category', 'Payee', 'Phase', 'Amount', 'From', 'To', 'Reference'];
+    const lines = [
+      header.map(csvCell).join(','),
+      ...[...txs].map((t) =>
+        [
+          t.transactionDate.slice(0, 10),
+          t.type,
+          t.costBucket || '',
+          t.category || '',
+          t.payee || vendorName(t.vendorId) || contractorName(t.contractorId),
+          phaseName(t.phaseId),
+          t.amount,
+          accountName(t.sourceAccountId),
+          accountName(t.destinationAccountId),
+          t.referenceNumber || '',
+        ].map(csvCell).join(',')
+      ),
+    ];
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `plot-to-ghar-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="stack">
+      <PageTitle title="Ledger" description="Append-only project money trail with evidence and safe reversals." />
+
+      <div className="toolbar">
+        <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ledger…" />
+        <select value={type} onChange={(e) => setType(e.target.value as typeof type)}>
+          <option value="ALL">All types</option>
+          <option value="EXPENSE">Expenses</option>
+          <option value="TRANSFER">Transfers</option>
+          <option value="FUNDING_IN">Funding</option>
+          <option value="ADVANCE">Advances</option>
+          <option value="ADVANCE_ADJUSTMENT">Advance adjustments</option>
+          <option value="REFUND">Refunds</option>
+          <option value="DIRECT_FUNDED_EXPENSE">Direct funded</option>
+          <option value="LOAN_REPAYMENT">Loan repayments</option>
+        </select>
+        <select value={phase} onChange={(e) => setPhase(e.target.value)}>
+          <option value="ALL">All phases</option>
+          {state.phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <button className="secondary small" onClick={exportCsv}>Export CSV</button>
+      </div>
+
+      <section className="panel ledger">
+        {!rows.length ? <p className="muted">No matching transactions.</p> : null}
+        {rows.map((t) => {
+          const canVoid = ['EXPENSE', 'TRANSFER', 'ADVANCE'].includes(t.type) && !reversed.has(t.id) && !t.reversalOf;
+          const context =
+            t.payee ||
+            vendorName(t.vendorId) ||
+            contractorName(t.contractorId) ||
+            (accountName(t.sourceAccountId) + (t.destinationAccountId ? ' → ' + accountName(t.destinationAccountId) : ''));
+          return (
+            <article key={t.id} className={t.reversalOf ? 'reversal' : ''}>
+              <div className={'txIcon ' + t.type.toLowerCase()}>
+                {t.type === 'EXPENSE' ? '−' : t.type === 'FUNDING_IN' ? '+' : t.type === 'TRANSFER' ? '↔' : '•'}
+              </div>
+              <div className="grow">
+                <div className="ledgerTitle">
+                  <b>{t.category || t.type.replaceAll('_', ' ')}</b>
+                  {t.costBucket ? <span className="status">{t.costBucket}</span> : null}
+                </div>
+                <small>
+                  {new Date(t.transactionDate).toLocaleDateString('en-IN')}
+                  {context ? ' · ' + context : ''}
+                  {phaseName(t.phaseId) ? ' · ' + phaseName(t.phaseId) : ''}
+                </small>
+                {t.description ? <p className="txDescription">{t.description}</p> : null}
+                {t.lineItems?.length ? (
+                  <div className="miniItems">
+                    {t.lineItems.map((item, i) => (
+                      <span key={i}>{item.description}: {item.quantity || ''} {item.unit || ''} × {money(item.rate || 0)}</span>
+                    ))}
+                  </div>
+                ) : null}
+                {t.attachments?.length ? (
+                  <div className="chips">
+                    {t.attachments.map((a) => (
+                      <a key={a.pathname} href={`/api/attachments?path=${encodeURIComponent(a.pathname)}`} target="_blank">
+                        {a.name}
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+                {reversed.has(t.id) ? <small className="muted">Reversed by a correcting entry</small> : null}
+              </div>
+              <div className="ledgerAmount">
+                <strong className={t.type === 'FUNDING_IN' ? 'positive' : ''}>{money(t.amount)}</strong>
+                {canVoid ? <button className="linkButton" onClick={() => onVoid(t.id)}>Void</button> : null}
+              </div>
+            </article>
+          );
+        })}
+      </section>
+    </div>
+  );
+}
