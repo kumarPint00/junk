@@ -83,6 +83,90 @@ export type CashReconciliation = {
   notes?: string;
 };
 
+
+export type FloorPlan = {
+  id: string;
+  name: string;
+  areaSqFt: number;
+  budgetAmount: number;
+  status: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED';
+  notes?: string;
+};
+export type WorkTask = {
+  id: string;
+  name: string;
+  phaseId?: string;
+  floorId?: string;
+  contractorId?: string;
+  startDate: string;
+  endDate: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'BLOCKED';
+  dependsOnId?: string;
+  estimatedCost: number;
+  notes?: string;
+};
+export type ContractorAgreement = {
+  id: string;
+  contractorId: string;
+  title: string;
+  scope: string;
+  value: number;
+  advanceLimit: number;
+  startDate?: string;
+  endDate?: string;
+  paymentTerms: string;
+  retentionPercent: number;
+  status: 'DRAFT' | 'SIGNED' | 'CLOSED';
+  attachments: AttachmentRef[];
+};
+export type ProgressEntry = {
+  id: string;
+  date: string;
+  phaseId?: string;
+  floorId?: string;
+  taskId?: string;
+  progressPercent: number;
+  notes: string;
+  attachments: AttachmentRef[];
+};
+export type StockItem = {
+  id: string;
+  name: string;
+  unit: string;
+  reorderLevel: number;
+  estimatedRequirement?: number;
+};
+export type StockMovement = {
+  id: string;
+  date: string;
+  itemId: string;
+  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN';
+  quantity: number;
+  floorId?: string;
+  phaseId?: string;
+  transactionId?: string;
+  notes?: string;
+};
+export type ProjectReminder = {
+  id: string;
+  title: string;
+  dueDate: string;
+  category: 'EMI' | 'PAYMENT' | 'DELIVERY' | 'WORK' | 'OTHER';
+  repeat: 'NONE' | 'MONTHLY';
+  completed: boolean;
+  lastNotifiedDate?: string;
+  notes?: string;
+};
+export type ConstructionSuite = {
+  floors: FloorPlan[];
+  schedule: WorkTask[];
+  agreements: ContractorAgreement[];
+  progress: ProgressEntry[];
+  stockItems: StockItem[];
+  stockMovements: StockMovement[];
+  reminders: ProjectReminder[];
+};
+
 export type ProjectState = {
   version: number;
   revision?: number;
@@ -105,6 +189,7 @@ export type ProjectState = {
   contractors: Entity[];
   loans: LoanFacility[];
   cashReconciliations: CashReconciliation[];
+  construction: ConstructionSuite;
   updatedAt: string;
 };
 

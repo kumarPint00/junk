@@ -1,7 +1,7 @@
 {
   "name": "plot-to-ghar-web",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.3.0",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -15,7 +15,8 @@
     "react": "19.1.1",
     "react-dom": "19.1.1",
     "@neondatabase/serverless": "1.2.0",
-    "aws4fetch": "1.0.20"
+    "aws4fetch": "1.0.20",
+    "tesseract.js": "^6.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ProjectState, Transaction, TxType } from '@/lib/types';
+import type { AttachmentRef, ProjectState, Transaction, TxType } from '@/lib/types';
 import { defaultState, normalizeState, validateProjectState } from '@/lib/defaults';
 import { computeLedger, findPotentialDuplicate, validateTx } from '@/lib/ledger';
 import {
@@ -18,8 +18,10 @@ import { Journey } from '@/components/views/Journey';
 import { AddTransaction } from '@/components/views/AddTransaction';
 import { Ledger } from '@/components/views/Ledger';
 import { More } from '@/components/views/More';
+import { ConstructionHub } from '@/components/views/ConstructionHub';
+import { dueReminders } from '@/lib/construction-calcs';
 
-type Tab = 'home' | 'journey' | 'add' | 'ledger' | 'more';
+type Tab = 'home' | 'journey' | 'build' | 'add' | 'ledger' | 'more';
 type RuntimeMode = 'checking' | 'cloud' | 'standalone';
 type AuthState = 'loading' | 'yes' | 'no' | 'setup';
 
@@ -58,6 +60,7 @@ export function AppShell() {
   const [state, setState] = useState<ProjectState | null>(null);
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [tab, setTab] = useState<Tab>('home');
+  const [scanDraft, setScanDraft] = useState<{ amount: string; date: string; payee: string; description: string; attachment?: AttachmentRef } | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState('');
   const [online, setOnline] = useState(true);
@@ -207,6 +210,28 @@ export function AppShell() {
   }, [toast]);
 
   const summary = useMemo(() => (state ? computeLedger(state.accounts, txs) : null), [state, txs]);
+
+  // Foreground browser reminder notifications. No background push claim: browsers may
+  // suspend this page when closed. Android native notifications need a separate bridge.
+  useEffect(() => {
+    if (auth !== 'yes' || !state) return;
+    const tick = () => {
+      if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+      const today = new Date().toLocaleDateString('en-CA');
+      for (const reminder of dueReminders(state.construction.reminders, new Date())) {
+        if (reminder.completed) continue;
+        const key = 'ptg-notified:' + reminder.id + ':' + today;
+        if (localStorage.getItem(key)) continue;
+        try {
+          new Notification('Plot to Ghar · ' + reminder.category, { body: reminder.title, icon: '/icon.svg', tag: reminder.id });
+          localStorage.setItem(key, '1');
+        } catch { /* Unsupported notification surface; in-app list remains available. */ }
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(timer);
+  }, [auth, state]);
 
   async function login(e: React.FormEvent) {
     e.preventDefault();
@@ -520,15 +545,16 @@ export function AppShell() {
       <main className="content">
         {tab === 'home' ? <Home state={state} txs={txs} /> : null}
         {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
-        {tab === 'add' ? <AddTransaction state={state} txs={txs} onSave={postTx} mode={mode} /> : null}
+        {tab === 'build' ? <ConstructionHub state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); setTab('add'); }} /> : null}
+        {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
         {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} /> : null}
         {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} /> : null}
       </main>
 
       <nav>
-        {(['home', 'journey', 'add', 'ledger', 'more'] as Tab[]).map((x) => (
+        {(['home', 'journey', 'build', 'add', 'ledger', 'more'] as Tab[]).map((x) => (
           <button key={x} onClick={() => setTab(x)} className={tab === x ? 'active' : ''}>
-            <span>{x === 'home' ? '⌂' : x === 'journey' ? '◉' : x === 'add' ? '+' : x === 'ledger' ? '☷' : '•••'}</span>
+            <span>{x === 'home' ? '⌂' : x === 'journey' ? '◉' : x === 'build' ? '▦' : x === 'add' ? '+' : x === 'ledger' ? '☷' : '•••'}</span>
             {x === 'add' ? 'Add' : x[0].toUpperCase() + x.slice(1)}
           </button>
         ))}

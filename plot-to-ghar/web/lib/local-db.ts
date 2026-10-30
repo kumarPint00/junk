@@ -157,7 +157,11 @@ function dataUrlToBlob(dataUrl: string) {
 
 export async function buildStandaloneBackup(state: ProjectState, transactions: Transaction[]) {
   const localPaths = new Set(
-    transactions.flatMap((t) => (t.attachments || []).map((a) => a.pathname)).filter((p) => p.startsWith('local://'))
+    [
+      ...transactions.flatMap((t) => (t.attachments || []).map((a) => a.pathname)),
+      ...(state.construction?.agreements || []).flatMap((a) => (a.attachments || []).map((ref) => ref.pathname)),
+      ...(state.construction?.progress || []).flatMap((p) => (p.attachments || []).map((ref) => ref.pathname)),
+    ].filter((p) => p.startsWith('local://'))
   );
 
   const attachments: Array<{

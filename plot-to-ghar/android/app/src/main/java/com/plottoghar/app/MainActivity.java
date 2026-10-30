@@ -51,6 +51,8 @@ public class MainActivity extends Activity {
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, false);
 
+        web.addJavascriptInterface(new NativeReminderBridge(this, web), "PlotToGharNative");
+
         web.setWebViewClient(new WebViewClient() {
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
                 Uri uri = req.getUrl();

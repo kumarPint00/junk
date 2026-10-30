@@ -51,7 +51,7 @@ function defaultPhases(): ConstructionPhase[] {
 
 export function defaultState(): ProjectState {
   return {
-    version: 2,
+    version: 3,
     revision: 1,
     project: {
       name: 'C-19 Plot to Home',
@@ -92,6 +92,14 @@ export function defaultState(): ProjectState {
       },
     ],
     cashReconciliations: [],
+    construction: {
+      floors: [
+        { id: 'floor-ground', name: 'Ground Floor · Shops + Parking', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
+        { id: 'floor-first', name: 'First Floor · 4BHK', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
+        { id: 'floor-terrace', name: 'Terrace / Roof', areaSqFt: 0, budgetAmount: 0, status: 'PLANNED' },
+      ],
+      schedule: [], agreements: [], progress: [], stockItems: [], stockMovements: [], reminders: [],
+    },
     updatedAt: new Date().toISOString(),
   };
 }
@@ -111,7 +119,7 @@ export function normalizeState(input?: Partial<ProjectState> | null): ProjectSta
   return {
     ...base,
     ...input,
-    version: 2,
+    version: 3,
     revision: Number(input.revision || 1),
     project,
     accounts: accounts.map((a) => ({ ...a, openingBalance: Number(a.openingBalance || 0), active: a.active !== false })),
@@ -128,6 +136,15 @@ export function normalizeState(input?: Partial<ProjectState> | null): ProjectSta
     contractors: Array.isArray(input.contractors) ? input.contractors : [],
     loans: Array.isArray(input.loans) && input.loans.length ? input.loans : base.loans,
     cashReconciliations: Array.isArray(input.cashReconciliations) ? input.cashReconciliations : [],
+    construction: {
+      floors: Array.isArray(input.construction?.floors) ? input.construction.floors : base.construction.floors,
+      schedule: Array.isArray(input.construction?.schedule) ? input.construction.schedule : [],
+      agreements: Array.isArray(input.construction?.agreements) ? input.construction.agreements : [],
+      progress: Array.isArray(input.construction?.progress) ? input.construction.progress : [],
+      stockItems: Array.isArray(input.construction?.stockItems) ? input.construction.stockItems : [],
+      stockMovements: Array.isArray(input.construction?.stockMovements) ? input.construction.stockMovements : [],
+      reminders: Array.isArray(input.construction?.reminders) ? input.construction.reminders : [],
+    },
     updatedAt: input.updatedAt || new Date().toISOString(),
   };
 }
@@ -145,6 +162,26 @@ export function validateProjectState(state: ProjectState) {
     ids.add(a.id);
     if (!a.name?.trim()) throw new Error('Every account needs a name.');
     if (!Number.isFinite(Number(a.openingBalance))) throw new Error('Invalid opening balance.');
+  }
+  for (const floor of state.construction.floors) {
+    if (!floor.id || !floor.name.trim() || !Number.isFinite(floor.areaSqFt) || floor.areaSqFt < 0) throw new Error('Invalid floor area.');
+    if (!Number.isFinite(floor.budgetAmount) || floor.budgetAmount < 0) throw new Error('Invalid floor budget.');
+  }
+  const workIds = new Set(state.construction.schedule.map((w) => w.id));
+  for (const work of state.construction.schedule) {
+    if (!work.name.trim() || !work.startDate || !work.endDate || work.endDate < work.startDate) throw new Error('Invalid construction schedule dates.');
+    if (!Number.isFinite(work.estimatedCost) || work.estimatedCost < 0) throw new Error('Invalid work estimate.');
+    if (work.dependsOnId && (!workIds.has(work.dependsOnId) || work.dependsOnId === work.id)) throw new Error('Invalid task dependency.');
+  }
+  for (const a of state.construction.agreements) {
+    if (!a.title.trim() || !a.scope.trim() || !Number.isFinite(a.value) || a.value < 0) throw new Error('Invalid contractor agreement.');
+    if (!state.contractors.some((c) => c.id === a.contractorId)) throw new Error('Agreement contractor not found.');
+  }
+  for (const item of state.construction.stockItems) {
+    if (!item.name.trim() || !item.unit.trim() || !Number.isFinite(item.reorderLevel) || item.reorderLevel < 0) throw new Error('Invalid inventory item.');
+  }
+  for (const entry of state.construction.stockMovements) {
+    if (!state.construction.stockItems.some((s) => s.id === entry.itemId) || !Number.isFinite(entry.quantity) || entry.quantity <= 0) throw new Error('Invalid inventory movement.');
   }
   for (const p of state.phases) {
     if (!p.id || !p.name?.trim()) throw new Error('Invalid construction phase.');
