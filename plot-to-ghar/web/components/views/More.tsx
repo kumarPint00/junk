@@ -51,7 +51,7 @@ export function More({
     });
   }
 
-  function reconcileCash() {
+  async function reconcileCash() {
     const counted = Number(countedCash);
     if (!cashAccount || !countedCash.trim() || !Number.isFinite(counted)) return;
     const entry = {
@@ -64,6 +64,7 @@ export function More({
     };
     const next = { ...draft, cashReconciliations: [entry, ...draft.cashReconciliations].slice(0, 100) };
     setDraft(next);
+    await save(next);
     setCountedCash('');
   }
 
@@ -189,6 +190,9 @@ export function More({
               <input value={v.phone || ''} onChange={(e) => updateEntity('vendors', i, { phone: e.target.value })} placeholder="Phone" />
               <input value={v.specialty || ''} onChange={(e) => updateEntity('vendors', i, { specialty: e.target.value })} placeholder="Material / specialty" />
               <label className="check"><input type="checkbox" checked={v.active !== false} onChange={(e) => updateEntity('vendors', i, { active: e.target.checked })} />Active</label>
+              <input value={v.address || ''} onChange={(e) => updateEntity('vendors', i, { address: e.target.value })} placeholder="Vendor address" />
+              <input value={v.gstin || ''} onChange={(e) => updateEntity('vendors', i, { gstin: e.target.value })} placeholder="GSTIN optional" />
+              <input value={v.notes || ''} onChange={(e) => updateEntity('vendors', i, { notes: e.target.value })} placeholder="Notes / terms" />
             </div>
           ))}
           <button className="secondary small" type="button" onClick={() => addEntity('vendors')}>+ Vendor</button>
@@ -200,6 +204,8 @@ export function More({
               <input value={v.phone || ''} onChange={(e) => updateEntity('contractors', i, { phone: e.target.value })} placeholder="Phone" />
               <input value={v.specialty || ''} onChange={(e) => updateEntity('contractors', i, { specialty: e.target.value })} placeholder="RCC / plumbing / electrical" />
               <label className="check"><input type="checkbox" checked={v.active !== false} onChange={(e) => updateEntity('contractors', i, { active: e.target.checked })} />Active</label>
+              <input value={v.address || ''} onChange={(e) => updateEntity('contractors', i, { address: e.target.value })} placeholder="Contractor address" />
+              <input value={v.notes || ''} onChange={(e) => updateEntity('contractors', i, { notes: e.target.value })} placeholder="Notes / agreement terms" />
             </div>
           ))}
           <button className="secondary small" type="button" onClick={() => addEntity('contractors')}>+ Contractor</button>
