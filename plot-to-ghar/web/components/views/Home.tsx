@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   ArrowDownRight, ArrowRight, ArrowUpRight, Bell, BookOpen, Building2, CalendarDays,
   Camera, CheckCircle2, ChevronRight, CircleAlert, ClipboardList, FileCheck2,
@@ -83,7 +84,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
     return tasks.length ? Math.round(tasks.filter(t => t.status === 'COMPLETED').length / tasks.length * 100) : null;
   };
 
-  const menu = [
+  const menu: Array<{ label: string; desc: string; Icon: LucideIcon; tint: string; section: Section; feature?: string; detail: string }> = [
     { label: 'Floor plans', desc: 'Budgets and areas', Icon: Layers3, tint: 'mint', section: 'build', feature: 'floors', detail: state.construction.floors.length + ' zones' },
     { label: 'Materials', desc: 'Estimate & inventory', Icon: Package, tint: 'orange', section: 'build', feature: 'materials', detail: totalItems + ' items' },
     { label: 'Schedule', desc: 'Plan and track tasks', Icon: CalendarDays, tint: 'violet', section: 'build', feature: 'schedule', detail: activeSchedules + ' active' },
@@ -96,7 +97,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
     { label: 'Reminders', desc: 'Due dates and alerts', Icon: Bell, tint: 'yellow', section: 'build', feature: 'reminders', detail: due.length + ' due' },
     { label: 'Receipt scanner', desc: 'Read bills with OCR', Icon: ScanLine, tint: 'sky', section: 'build', feature: 'ocr', detail: 'Review before save' },
     { label: 'Property journey', desc: 'Registry to finishing', Icon: BookOpen, tint: 'slate', section: 'journey', detail: completedMilestones + '/' + milestonesCount + ' steps' },
-  ] as const;
+  ];
 
   return <div className="stack dashboardPage">
     <div className="dashboardIntro">
@@ -172,7 +173,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
       <div className="dashSectionTitle"><div><h2>Manage your project</h2><p>Everything you need, organized by workstream.</p></div></div>
       <div className="moduleGrid">
         {menu.map(({ label, desc, Icon, tint, section, feature, detail }) => (
-          <button key={label} type="button" className="moduleTile" onClick={() => openSection(section, 'feature' in {feature} ? feature : undefined)}>
+          <button key={label} type="button" className="moduleTile" onClick={() => openSection(section, feature)}>
             <span className={'moduleIcon ' + tint}><Icon size={23} strokeWidth={2} /></span>
             <b>{label}</b>
             <small>{desc}</small>

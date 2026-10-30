@@ -161,6 +161,7 @@ export async function buildStandaloneBackup(state: ProjectState, transactions: T
       ...transactions.flatMap((t) => (t.attachments || []).map((a) => a.pathname)),
       ...(state.construction?.agreements || []).flatMap((a) => (a.attachments || []).map((ref) => ref.pathname)),
       ...(state.construction?.progress || []).flatMap((p) => (p.attachments || []).map((ref) => ref.pathname)),
+      ...(state.construction?.documents || []).flatMap((d) => (d.attachments || []).map((ref) => ref.pathname)),
     ].filter((p) => p.startsWith('local://'))
   );
 
