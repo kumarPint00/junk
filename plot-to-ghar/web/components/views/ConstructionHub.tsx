@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ConstructionSuite, ProjectState, Transaction, FloorPlan, WorkTask } from '@/lib/types';
 import { money, PageTitle } from '@/components/ui';
 import { hasScheduleCycle, materialEstimate } from '@/lib/construction-calcs';
@@ -88,25 +88,7 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
       <div className="row"><span>Total floor budget</span><b>{money(estimated)}</b></div>
       {floors.map((floor) => {
         const totals = costForFloor(floor);
-        return <div className="suiteRecord" key={floor.id}>
-          <b>{floor.name}</b>
-          <div className="grid3">
-            <label>Built-up area (sq ft)
-              <input type="number" min="0" defaultValue={floor.areaSqFt} key={floor.id + '-area-' + floor.areaSqFt}
-                onBlur={(e) => { const n = numeric(e.target.value); if (n >= 0 && n !== floor.areaSqFt) change(floor.id, { areaSqFt: n }); }} />
-            </label>
-            <label>Budget (₹)
-              <input type="number" min="0" defaultValue={floor.budgetAmount} key={floor.id + '-budget-' + floor.budgetAmount}
-                onBlur={(e) => { const n = numeric(e.target.value); if (n >= 0 && n !== floor.budgetAmount) change(floor.id, { budgetAmount: n }); }} />
-            </label>
-            <label>Status
-              <select value={floor.status} onChange={(e) => change(floor.id, { status: e.target.value as FloorPlan['status'] })}>
-                <option value="PLANNED">Planned</option><option value="IN_PROGRESS">In progress</option><option value="COMPLETED">Completed</option>
-              </select>
-            </label>
-          </div>
-          <small className="muted">Scheduled work estimate: {money(totals.linkedEstimate)} · {totals.workCount} tasks. This is not actual ledger spending.</small>
-        </div>;
+        return <FloorEditor key={floor.id} floor={floor} floors={floors} totals={totals} patch={patch} />;
       })}
       <p className="muted">Actual project costs remain in Ledger; floor budgets and task estimates are forecasts, not additional expenses.</p>
     </section>
@@ -125,6 +107,56 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
       <MaterialEstimator />
     </section>
   </div>;
+}
+
+function FloorEditor({
+  floor, floors, totals, patch,
+}: {
+  floor: FloorPlan;
+  floors: FloorPlan[];
+  totals: { linkedEstimate: number; workCount: number };
+  patch: UpdateSuite;
+}) {
+  const [draft, setDraft] = useState<FloorPlan>(floor);
+  const [error, setError] = useState('');
+  useEffect(() => { setDraft(floor); }, [floor]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.name.trim() || !Number.isFinite(draft.areaSqFt) || draft.areaSqFt < 0 ||
+      !Number.isFinite(draft.budgetAmount) || draft.budgetAmount < 0) {
+      setError('Provide a floor name and valid area and budget.');
+      return;
+    }
+    await patch({ floors: floors.map((f) => f.id === floor.id ? { ...draft, name: draft.name.trim() } : f) });
+    setError('');
+  }
+
+  return <details className="suiteRecord">
+    <summary><b>{floor.name}</b> · {money(floor.budgetAmount)} · {floor.status.replace('_',' ')} <span className="muted">✎ Edit</span></summary>
+    <form className="form detailsBody" onSubmit={submit}>
+      <label>Name / zone
+        <input required value={draft.name} onChange={(e)=>setDraft((s)=>({...s,name:e.target.value}))}/>
+      </label>
+      <div className="grid3">
+        <label>Built-up area (sq ft)
+          <input type="number" min="0" step="any" value={draft.areaSqFt} onChange={(e)=>setDraft((s)=>({...s,areaSqFt:Number(e.target.value)}))}/>
+        </label>
+        <label>Budget (₹)
+          <input type="number" min="0" step="0.01" value={draft.budgetAmount} onChange={(e)=>setDraft((s)=>({...s,budgetAmount:Number(e.target.value)}))}/>
+        </label>
+        <label>Status
+          <select value={draft.status} onChange={(e)=>setDraft((s)=>({...s,status:e.target.value as FloorPlan['status']}))}>
+            <option value="PLANNED">Planned</option><option value="IN_PROGRESS">In progress</option><option value="COMPLETED">Completed</option>
+          </select>
+        </label>
+      </div>
+      <label>Notes<textarea value={draft.notes||''} onChange={(e)=>setDraft((s)=>({...s,notes:e.target.value}))}/></label>
+      <small className="muted">Scheduled work estimate: {money(totals.linkedEstimate)} · {totals.workCount} tasks. This is not actual spending.</small>
+      {error && <span className="error">{error}</span>}
+      <button className="primary" type="submit">Save this floor</button>
+    </form>
+  </details>;
 }
 
 export function MaterialEstimator() {
