@@ -17,5 +17,5 @@ export async function saveEvidence(file: File, mode: 'cloud' | 'standalone'): Pr
 export async function openEvidence(ref: AttachmentRef) {
   if (ref.pathname.startsWith('local://')) return openLocalAttachment(ref.pathname);
   if (!ref.pathname) throw new Error('Evidence reference missing.');
-  window.open('/api/attachments?pathname=' + encodeURIComponent(ref.pathname), '_blank', 'noopener,noreferrer');
+  window.open('/api/attachments?path=' + encodeURIComponent(ref.pathname), '_blank', 'noopener,noreferrer');
 }
