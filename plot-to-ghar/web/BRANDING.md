@@ -1,4 +1,4 @@
-# Plot to Ghar · Brand and metadata (v2.4.0)
+# Plot to Ghar · Brand and metadata (v2.5.0)
 
 ## Name and positioning
 - App name: **Plot to Ghar**
@@ -6,7 +6,7 @@
 - Category: Finance / Productivity
 - Website: https://plot-to-ghar.vercel.app/
 - Android application ID: `com.plottoghar.app` (unchanged for update compatibility)
-- Brand colors: navy `#07101e`, mint `#39dcab`, sky blue `#8cd8f2`
+- Brand colors: emerald and navy, with a light dashboard theme. Navy `#07101e`, mint `#39dcab`, sky blue `#8cd8f2`
 - Privacy: Personal financial data must not be advertised or indexed; robots disallow applies to crawling, not authentication.
 
 ## Longer store description (draft, not a store submission)
