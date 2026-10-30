@@ -1,0 +1,62 @@
+name: Plot to Ghar Production Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/production-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Wait for production and verify backend health
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://plot-to-ghar.vercel.app/api/health"
+          for attempt in $(seq 1 36); do
+            echo "Health attempt $attempt"
+            if body="$(curl --silent --show-error --fail --max-time 15 "$URL" 2>/tmp/curl.err)"; then
+              echo "$body"
+              BODY="$body" node --input-type=module <<'NODE'
+          const body = JSON.parse(process.env.BODY);
+          if (body.version !== '2.0.0') process.exit(2);
+          if (body.ok !== true || body.database !== true) process.exit(3);
+          if (body.storageConfigured !== true) process.exit(4);
+          NODE
+              code=$?
+              if [ "$code" -eq 0 ]; then
+                echo "Production backend health is ready."
+                break
+              fi
+              echo "Production has not reached the expected v2 health state yet (code $code)."
+            else
+              cat /tmp/curl.err || true
+            fi
+
+            if [ "$attempt" -eq 36 ]; then
+              echo "Production health did not become ready." >&2
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Verify production shell and security headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          headers="$(mktemp)"
+          body="$(mktemp)"
+          curl --silent --show-error --fail --max-time 20 -D "$headers" -o "$body" https://plot-to-ghar.vercel.app/
+          grep -qi '^content-security-policy:' "$headers"
+          grep -qi '^strict-transport-security:' "$headers"
+          grep -qi '^x-content-type-options: *nosniff' "$headers"
+          grep -qi '^permissions-policy:' "$headers"
+          grep -q 'Plot to Ghar' "$body"
+          echo "Production shell and security headers verified."
