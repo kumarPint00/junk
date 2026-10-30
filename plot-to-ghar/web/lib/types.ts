@@ -4,6 +4,7 @@ export type TxType =
   | 'EXPENSE'
   | 'ADVANCE'
   | 'ADVANCE_ADJUSTMENT'
+  | 'ADVANCE_REFUND'
   | 'REFUND'
   | 'DIRECT_FUNDED_EXPENSE'
   | 'LOAN_REPAYMENT';
