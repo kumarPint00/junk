@@ -159,6 +159,7 @@ export type ProjectReminder = {
   repeat: 'NONE' | 'MONTHLY';
   completed: boolean;
   lastNotifiedDate?: string;
+  lastCompletedMonth?: string;
   notes?: string;
 };
 export type ConstructionSuite = {
