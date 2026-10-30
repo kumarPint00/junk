@@ -13,3 +13,10 @@
 .negativeStock{color:var(--danger)!important}
 .suiteRecord .check{display:flex!important;gap:8px!important}.suiteRecord .check input{width:auto!important}
 @media(max-width:580px){nav button{font-size:9px}.suiteTabs{margin:0 -4px}.suiteRecord{padding:10px}}
+
+/* Consistent app brand identity */
+.brandImage{display:block;width:72px;height:72px;border-radius:18px;margin-bottom:14px}
+.brandIdentity{display:flex;align-items:center;gap:10px;min-width:0}
+.brandIdentity img{width:36px;height:36px;flex:none;border-radius:9px}
+.brandIdentity>div{min-width:0}
+.brandIdentity strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}

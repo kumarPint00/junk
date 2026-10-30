@@ -30,7 +30,7 @@ public final class ReminderReceiver extends BroadcastReceiver {
 
         if (manager != null && permitted) {
             Notification notification = new Notification.Builder(context, NativeReminderBridge.CHANNEL)
-                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setSmallIcon(R.drawable.ic_notification)
                     .setContentTitle("Plot to Ghar · " + (category == null ? "Reminder" : category))
                     .setContentText(title)
                     .setAutoCancel(true)

@@ -1,5 +1,5 @@
-const CACHE = 'plot-to-ghar-shell-v4';
-const SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'plot-to-ghar-shell-v5';
+const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/icon-512.png', '/icon-maskable-512.png', '/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
