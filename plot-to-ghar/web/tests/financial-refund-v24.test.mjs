@@ -8,7 +8,7 @@ async function load(filename) {
  return import('data:text/javascript;base64,'+Buffer.from(code).toString('base64'));
 }
 const {validateTx, computeLedger}=await load('../lib/ledger.ts');
-const state={accounts:[{id:'bank',openingBalance:1000}],fundingSources:[],milestones:[],phases:[],vendors:[],contractors:[]};
+const state={accounts:[{id:'bank',openingBalance:1000}],fundingSources:[],milestones:[],phases:[{id:'phase1'}],vendors:[],contractors:[]};
 const expense={id:'exp1',type:'EXPENSE',amount:100,sourceAccountId:'bank',costBucket:'CONSTRUCTION',category:'cement',phaseId:'phase1',transactionDate:'2026-10-20'};
 const refund={id:'refund1',type:'REFUND',amount:50,destinationAccountId:'bank',costBucket:'CONSTRUCTION',category:'cement',phaseId:'phase1',linkedTransactionId:'exp1',transactionDate:'2026-10-21'};
 test('refund without original expense is rejected',()=>assert.throws(()=>validateTx({...refund,linkedTransactionId:undefined},{state,transactions:[expense]}),/original expense/));
