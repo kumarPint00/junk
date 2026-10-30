@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConstructionSuite, ProjectState, Transaction, FloorPlan, WorkTask } from '@/lib/types';
 import { money, PageTitle } from '@/components/ui';
+import { computeLedger } from '@/lib/ledger';
 import { hasScheduleCycle, materialEstimate } from '@/lib/construction-calcs';
 import { MaterialsView, AgreementsView, ProgressView, FinanceView, RemindersView, ReceiptView } from './ConstructionTools';
 
@@ -62,6 +63,7 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
   const [error, setError] = useState('');
   const floors = state.construction.floors;
   const estimated = floors.reduce((s, f) => s + f.budgetAmount, 0);
+  const floorSpend = useMemo(() => computeLedger(state.accounts,txs).floorSpend,[state.accounts,txs]);
 
   function costForFloor(floor: FloorPlan) {
     // Existing ledger has phase references, not floor references. Only report explicitly linked
@@ -88,7 +90,7 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
       <div className="row"><span>Total floor budget</span><b>{money(estimated)}</b></div>
       {floors.map((floor) => {
         const totals = costForFloor(floor);
-        return <FloorEditor key={floor.id} floor={floor} floors={floors} totals={totals} patch={patch} />;
+        return <FloorEditor key={floor.id} floor={floor} floors={floors} totals={totals} actualSpend={floorSpend[floor.id] || 0} patch={patch} />;
       })}
       <p className="muted">Actual project costs remain in Ledger; floor budgets and task estimates are forecasts, not additional expenses.</p>
     </section>
@@ -110,11 +112,12 @@ function FloorsView({ state, txs, patch }: { state: ProjectState; txs: Transacti
 }
 
 function FloorEditor({
-  floor, floors, totals, patch,
+  floor, floors, totals, actualSpend, patch,
 }: {
   floor: FloorPlan;
   floors: FloorPlan[];
   totals: { linkedEstimate: number; workCount: number };
+  actualSpend: number;
   patch: UpdateSuite;
 }) {
   const [draft, setDraft] = useState<FloorPlan>(floor);
@@ -152,7 +155,9 @@ function FloorEditor({
         </label>
       </div>
       <label>Notes<textarea value={draft.notes||''} onChange={(e)=>setDraft((s)=>({...s,notes:e.target.value}))}/></label>
-      <small className="muted">Scheduled work estimate: {money(totals.linkedEstimate)} · {totals.workCount} tasks. This is not actual spending.</small>
+      <div className="row"><span>Real ledger expense</span><b>{money(actualSpend)}</b></div>
+      <div className="row"><span>Remaining floor budget</span><b>{money(draft.budgetAmount - actualSpend)}</b></div>
+      <small className="muted">Scheduled work estimate: {money(totals.linkedEstimate)} · {totals.workCount} tasks. Estimates are not actual expenses.</small>
       {error && <span className="error">{error}</span>}
       <button className="primary" type="submit">Save this floor</button>
     </form>
