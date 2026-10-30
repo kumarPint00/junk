@@ -266,7 +266,7 @@ export function ProgressView({state,patch,mode}:ChildProps) {
     try {
       const attachments:AttachmentRef[]=[];
       for(const file of files) attachments.push(await saveEvidence(file,mode));
-      const entry:ProgressEntry={id:crypto.randomUUID(),date,floorId:floorId||undefined,phaseId:phaseId||undefined,taskId:taskId||undefined,progressPercent:p,notes:notes.trim(),attachments};
+      const entry:ProgressEntry={id:crypto.randomUUID(),createdAt:new Date().toISOString(),date,floorId:floorId||undefined,phaseId:phaseId||undefined,taskId:taskId||undefined,progressPercent:p,notes:notes.trim(),attachments};
       await patch({ progress:[...progress,entry] });
       setNotes('');setFiles([]);setError('');
     } catch(e){setError(e instanceof Error?e.message:'Unable to save progress');} finally{setWorking(false);}
@@ -288,13 +288,64 @@ export function ProgressView({state,patch,mode}:ChildProps) {
     </form>
     <section className="panel"><h2>Site progress timeline</h2>
       {!progress.length && <p className="muted">No site updates yet.</p>}
-      {[...progress].reverse().sort((a,b)=>b.date.localeCompare(a.date)).map((p)=><div className="suiteRecord" key={p.id}>
+      {[...progress].reverse().sort((a,b)=>(b.createdAt||b.date).localeCompare(a.createdAt||a.date)).map((p)=><div className="suiteRecord" key={p.id}>
         <div className="sectionHead"><b>{p.date}</b><span className="status">{p.progressPercent}% noted</span></div>
         <small className="muted">{state.construction.floors.find((f)=>f.id===p.floorId)?.name||'Site'} · {state.phases.find((x)=>x.id===p.phaseId)?.name||'General'}</small>
+        {p.supersedesId && <small className="muted">Correction of earlier progress entry {p.supersedesId}</small>}
+        {progress.some((x)=>x.supersedesId===p.id) && <small className="warning">A later correction replaces this observation. The original is retained for audit.</small>}
         <p>{p.notes}</p><AttachmentLinks refs={p.attachments}/>
+        {!progress.some((x)=>x.supersedesId===p.id) && <ProgressCorrector original={p} state={state} patch={patch} mode={mode} />}
       </div>)}
     </section>
   </div>;
+}
+
+
+function ProgressCorrector({original,state,patch,mode}:{
+  original:ProgressEntry;state:ProjectState;patch:UpdateSuite;mode:'cloud'|'standalone';
+}) {
+  const [date,setDate]=useState(original.date);
+  const [percent,setPercent]=useState(String(original.progressPercent));
+  const [notes,setNotes]=useState(original.notes);
+  const [floorId,setFloorId]=useState(original.floorId||'');
+  const [phaseId,setPhaseId]=useState(original.phaseId||'');
+  const [file,setFile]=useState<File|null>(null);
+  const [error,setError]=useState('');const [busy,setBusy]=useState(false);
+  async function correct(e:React.FormEvent){
+    e.preventDefault();
+    const p=Number(percent);
+    if(!notes.trim() || !Number.isFinite(p) || p<0 || p>100 || !date){
+      setError('Enter valid corrected date, percentage and notes.');return;
+    }
+    if(!window.confirm('Append a correcting record? The original site diary entry and its photos remain available.')) return;
+    setBusy(true);
+    try {
+      const attachments:AttachmentRef[]=[];
+      if(file) attachments.push(await saveEvidence(file,mode));
+      const corrected:ProgressEntry={
+        id:crypto.randomUUID(),createdAt:new Date().toISOString(),supersedesId:original.id,
+        date,progressPercent:p,notes:notes.trim(),
+        floorId:floorId||undefined,phaseId:phaseId||undefined,
+        taskId:original.taskId,attachments,
+      };
+      await patch({progress:[...state.construction.progress,corrected]});
+      setError('');
+    }catch(e){setError(e instanceof Error?e.message:'Could not save correction');}finally{setBusy(false);}
+  }
+  return <details className="editDetails"><summary>✎ Correct this progress record</summary>
+    <form className="form detailsBody" onSubmit={correct}>
+      <p className="muted">This creates a dated correction. It does not rewrite or delete the previous observation.</p>
+      <div className="grid2">
+        <label>Corrected observation date<input type="date" required value={date} onChange={(e)=>setDate(e.target.value)}/></label>
+        <label>Corrected progress %<input type="number" min="0" max="100" value={percent} onChange={(e)=>setPercent(e.target.value)}/></label>
+        <label>Floor<select value={floorId} onChange={(e)=>setFloorId(e.target.value)}><option value="">Site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}</select></label>
+        <label>Phase<select value={phaseId} onChange={(e)=>setPhaseId(e.target.value)}><option value="">General</option>{state.phases.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      </div>
+      <label>Corrected observations and reason<textarea required value={notes} onChange={(e)=>setNotes(e.target.value)}/></label>
+      <label>Replacement photo / PDF (optional)<input type="file" accept="image/*,application/pdf" onChange={(e)=>setFile(e.target.files?.[0]||null)}/></label>
+      <ErrorLine message={error}/><button className="primary" disabled={busy} type="submit">Save append-only correction</button>
+    </form>
+  </details>;
 }
 
 export function FinanceView({state,txs}:ChildProps){
