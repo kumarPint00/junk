@@ -384,7 +384,10 @@ export function RemindersView({state,patch}:ChildProps){
     setTitle('');setError('');
   }
   async function mark(id:string,completed:boolean){
-    await patch({reminders:reminders.map((r)=>r.id===id?{...r,completed}:r)});
+    const month=dateNow().slice(0,7);
+    await patch({reminders:reminders.map((r)=>r.id===id
+      ? r.repeat === 'MONTHLY' ? {...r,completed:false,lastCompletedMonth:completed?month:undefined} : {...r,completed}
+      : r)});
   }
   async function allowNotifications(){
     if(nativeBridge) {
@@ -408,7 +411,8 @@ export function RemindersView({state,patch}:ChildProps){
       {reminders.slice().sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).map((r)=><div className="suiteRecord" key={r.id}>
         <div className="sectionHead"><b>{r.title}</b><span className="status">{r.category}</span></div>
         <small className="muted">{r.dueDate} · {r.repeat==='MONTHLY'?'Every month':'Once'}</small>
-        <label className="check"><input type="checkbox" checked={r.completed} onChange={(e)=>mark(r.id,e.target.checked)}/>Done</label>
+        <label className="check"><input type="checkbox" checked={r.repeat === 'MONTHLY' ? r.lastCompletedMonth === dateNow().slice(0,7) : r.completed} onChange={(e)=>mark(r.id,e.target.checked)}/> {r.repeat === 'MONTHLY' ? 'Done this month' : 'Completed'}</label>
+        <ReminderEditor reminder={r} reminders={reminders} patch={patch}/>
       </div>)}
     </section>
     <form className="panel form" onSubmit={add}><h2>New reminder</h2>
@@ -423,6 +427,39 @@ export function RemindersView({state,patch}:ChildProps){
       <ErrorLine message={error}/><button className="primary" type="submit">Add reminder</button>
     </form>
   </div>;
+}
+
+
+function ReminderEditor({reminder,reminders,patch}:{
+  reminder:ProjectReminder;reminders:ProjectReminder[];patch:UpdateSuite;
+}) {
+  const [draft,setDraft]=useState<ProjectReminder>(reminder);
+  const [error,setError]=useState('');
+  useEffect(()=>setDraft(reminder),[reminder]);
+  async function save(e:React.FormEvent){
+    e.preventDefault();
+    if(!draft.title.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(draft.dueDate)){
+      setError('Enter a valid reminder title and due date.');return;
+    }
+    await patch({reminders:reminders.map((r)=>r.id===reminder.id?{...draft,title:draft.title.trim()}:r)});
+    setError('');
+  }
+  return <details className="editDetails"><summary>✎ Edit reminder</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      <label>Title<input required value={draft.title} onChange={(e)=>setDraft((r)=>({...r,title:e.target.value}))}/></label>
+      <div className="grid3">
+        <label>Due date<input type="date" required value={draft.dueDate} onChange={(e)=>setDraft((r)=>({...r,dueDate:e.target.value}))}/></label>
+        <label>Category<select value={draft.category} onChange={(e)=>setDraft((r)=>({...r,category:e.target.value as ProjectReminder['category']}))}>
+          <option value="EMI">EMI</option><option value="PAYMENT">Payment</option><option value="DELIVERY">Delivery</option><option value="WORK">Work</option><option value="OTHER">Other</option>
+        </select></label>
+        <label>Repeat<select value={draft.repeat} onChange={(e)=>setDraft((r)=>({...r,repeat:e.target.value as ProjectReminder['repeat']}))}>
+          <option value="NONE">Once</option><option value="MONTHLY">Monthly</option>
+        </select></label>
+      </div>
+      <label>Notes<textarea value={draft.notes||''} onChange={(e)=>setDraft((r)=>({...r,notes:e.target.value}))}/></label>
+      <ErrorLine message={error}/><button className="primary" type="submit">Save reminder changes</button>
+    </form>
+  </details>;
 }
 
 function parseText(raw:string) {
