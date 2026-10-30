@@ -140,7 +140,7 @@ export type StockMovement = {
   id: string;
   date: string;
   itemId: string;
-  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN';
+  type: 'RECEIPT' | 'CONSUMPTION' | 'WASTAGE' | 'RETURN' | 'CORRECTION_IN' | 'CORRECTION_OUT';
   quantity: number;
   floorId?: string;
   phaseId?: string;
