@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { AttachmentRef, ContractorAgreement, ConstructionSuite, ProgressEntry, ProjectReminder, ProjectState, StockItem, StockMovement, Transaction } from '@/lib/types';
 import { money } from '@/components/ui';
 import { emi, loanProjection, stockBalances, dueReminders } from '@/lib/construction-calcs';
@@ -264,6 +264,12 @@ export function RemindersView({state,patch}:ChildProps){
   const [error,setError]=useState('');
   const [permission,setPermission]=useState(typeof Notification==='undefined'?'unavailable':Notification.permission);
   const dueNow=dueReminders(reminders,new Date());
+  const nativeBridge = typeof window !== 'undefined'
+    ? (window as Window & { PlotToGharNative?: { requestNotificationPermission: () => void; syncReminders: (data: string) => void } }).PlotToGharNative
+    : undefined;
+  useEffect(() => {
+    try { nativeBridge?.syncReminders(JSON.stringify(reminders)); } catch { /* Browser-only app */ }
+  }, [reminders, nativeBridge]);
   async function add(e:React.FormEvent){
     e.preventDefault();
     if(!title.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(due)){setError('Enter title and valid date.');return;}
@@ -274,7 +280,13 @@ export function RemindersView({state,patch}:ChildProps){
     await patch({reminders:reminders.map((r)=>r.id===id?{...r,completed}:r)});
   }
   async function allowNotifications(){
-    if(typeof Notification==='undefined'){setError('Notification API is not supported in this webview. Reminders remain visible in the app.');return;}
+    if(nativeBridge) {
+      nativeBridge.requestNotificationPermission();
+      nativeBridge.syncReminders(JSON.stringify(reminders));
+      setPermission('native-requested');
+      return;
+    }
+    if(typeof Notification==='undefined'){setError('Browser notification API unavailable. Reminders remain visible in the app.');return;}
     const next=await Notification.requestPermission();
     setPermission(next);
     if(next==='granted') new Notification('Plot to Ghar',{body:'Notification permission enabled while the app is open.',icon:'/icon.svg'});
@@ -283,9 +295,9 @@ export function RemindersView({state,patch}:ChildProps){
     <section className="panel">
       <h2>Reminders & alerts</h2>
       <div className="row"><span>Due or overdue</span><b>{dueNow.filter((r)=>!r.completed).length}</b></div>
-      <p className="muted">Reminders are saved offline. Browser notifications can appear while this app is open; reliable notifications when closed require a separate push backend or Android native scheduling.</p>
-      <div className="row"><span>Browser notification permission</span><b>{permission}</b></div>
-      <button className="secondary" type="button" onClick={allowNotifications}>Enable browser notifications</button>
+      <p className="muted">Reminders are saved offline. Android APK uses locally scheduled device alarms for closed-app reminders (subject to battery restrictions). The website uses foreground browser notifications only; server push is not configured.</p>
+      <div className="row"><span>Notification mode</span><b>{nativeBridge ? 'Android local alarms' : permission}</b></div>
+      <button className="secondary" type="button" onClick={allowNotifications}>Enable device notifications</button>
       {reminders.slice().sort((a,b)=>a.dueDate.localeCompare(b.dueDate)).map((r)=><div className="suiteRecord" key={r.id}>
         <div className="sectionHead"><b>{r.title}</b><span className="status">{r.category}</span></div>
         <small className="muted">{r.dueDate} · {r.repeat==='MONTHLY'?'Every month':'Once'}</small>
