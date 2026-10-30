@@ -278,7 +278,7 @@ function ScheduleView({ state, patch }: { state: ProjectState; patch: UpdateSuit
       {sorted.map((t) => {
         const dependency = tasks.find((x) => x.id === t.dependsOnId);
         const blocked = Boolean(dependency && dependency.status !== 'COMPLETED');
-        return <div className="suiteRecord" key={t.id}>
+        return <div className="suiteRecord scheduleRecord" key={t.id}>
           <div className="sectionHead"><b>{t.name}</b><span className={'status ' + t.status.toLowerCase()}>{t.status.replace('_',' ')}</span></div>
           <small className="muted">{t.startDate} → {t.endDate} · {state.construction.floors.find((f)=>f.id===t.floorId)?.name || 'Shared'} · {money(t.estimatedCost)}</small>
           {dependency && <small className="muted">Prerequisite: {dependency.name} {blocked ? '(not complete)' : '✓'}</small>}
