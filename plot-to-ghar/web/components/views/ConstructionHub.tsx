@@ -239,6 +239,7 @@ function ScheduleView({ state, patch }: { state: ProjectState; patch: UpdateSuit
           <select aria-label={'Status for ' + t.name} value={t.status} onChange={(e) => updateStatus(t, e.target.value as WorkTask['status'])}>
             <option value="PENDING">Pending</option><option value="IN_PROGRESS">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Completed</option>
           </select>
+          <TaskEditor task={t} state={state} patch={patch} />
         </div>;
       })}
       {error && <div className="error">{error}</div>}
@@ -258,4 +259,56 @@ function ScheduleView({ state, patch }: { state: ProjectState; patch: UpdateSuit
       <button className="primary" type="submit">Add activity</button>
     </form>
   </div>;
+}
+
+function TaskEditor({ task, state, patch }: {task: WorkTask; state: ProjectState; patch: UpdateSuite}) {
+  const [draft, setDraft] = useState<WorkTask>(task);
+  const [error,setError] = useState('');
+  useEffect(()=>setDraft(task),[task]);
+  const tasks = state.construction.schedule;
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    if (!draft.name.trim() || !draft.startDate || !draft.endDate || draft.endDate < draft.startDate ||
+        !Number.isFinite(draft.estimatedCost) || draft.estimatedCost < 0) {
+      setError('Check task name, scheduled dates and cost.'); return;
+    }
+    if (hasScheduleCycle(tasks, task.id, draft.dependsOnId)) {
+      setError('Circular prerequisites are not allowed.'); return;
+    }
+    if ((draft.status === 'COMPLETED' || draft.status === 'IN_PROGRESS') && draft.dependsOnId) {
+      const before = tasks.find((x)=>x.id===draft.dependsOnId);
+      if (before && before.status !== 'COMPLETED') {setError('Complete prerequisite first: '+before.name);return;}
+    }
+    await patch({schedule:tasks.map((x)=>x.id===task.id?{...draft,name:draft.name.trim()}:x)});
+    setError('');
+  }
+  return <details className="editDetails">
+    <summary>✎ Edit work plan / dependencies</summary>
+    <form className="form detailsBody" onSubmit={save}>
+      <label>Work name<input required value={draft.name} onChange={(e)=>setDraft((s)=>({...s,name:e.target.value}))}/></label>
+      <div className="grid2">
+        <label>Start<input type="date" required value={draft.startDate} onChange={(e)=>setDraft((s)=>({...s,startDate:e.target.value}))}/></label>
+        <label>Finish<input type="date" required value={draft.endDate} onChange={(e)=>setDraft((s)=>({...s,endDate:e.target.value}))}/></label>
+        <label>Floor<select value={draft.floorId||''} onChange={(e)=>setDraft((s)=>({...s,floorId:e.target.value||undefined}))}>
+          <option value="">Shared site</option>{state.construction.floors.map((f)=><option key={f.id} value={f.id}>{f.name}</option>)}
+        </select></label>
+        <label>Phase<select value={draft.phaseId||''} onChange={(e)=>setDraft((s)=>({...s,phaseId:e.target.value||undefined}))}>
+          <option value="">None</option>{state.phases.map((p)=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select></label>
+        <label>Contractor<select value={draft.contractorId||''} onChange={(e)=>setDraft((s)=>({...s,contractorId:e.target.value||undefined}))}>
+          <option value="">Not assigned</option>{state.contractors.map((c)=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select></label>
+        <label>Prerequisite<select value={draft.dependsOnId||''} onChange={(e)=>setDraft((s)=>({...s,dependsOnId:e.target.value||undefined}))}>
+          <option value="">None</option>{tasks.filter((t)=>t.id!==task.id).map((t)=><option key={t.id} value={t.id}>{t.name}</option>)}
+        </select></label>
+        <label>Work estimate (₹)<input type="number" min="0" step="0.01" value={draft.estimatedCost} onChange={(e)=>setDraft((s)=>({...s,estimatedCost:Number(e.target.value)}))}/></label>
+        <label>Status<select value={draft.status} onChange={(e)=>setDraft((s)=>({...s,status:e.target.value as WorkTask['status']}))}>
+          <option value="PENDING">Pending</option><option value="IN_PROGRESS">In progress</option><option value="BLOCKED">Blocked</option><option value="COMPLETED">Completed</option>
+        </select></label>
+      </div>
+      <label>Notes<textarea value={draft.notes||''} onChange={(e)=>setDraft((s)=>({...s,notes:e.target.value}))}/></label>
+      {error&&<div className="error">{error}</div>}
+      <button type="submit" className="primary">Save activity changes</button>
+    </form>
+  </details>;
 }
