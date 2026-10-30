@@ -205,7 +205,7 @@ export function validateProjectState(state: ProjectState) {
   for (const entry of state.construction.stockMovements) {
     if (!state.construction.stockItems.some((s) => s.id === entry.itemId) || !Number.isFinite(entry.quantity) || entry.quantity <= 0) throw new Error('Invalid inventory movement.');
     if (!['RECEIPT','CONSUMPTION','WASTAGE','RETURN','CORRECTION_IN','CORRECTION_OUT'].includes(entry.type)) throw new Error('Unknown stock movement.');
-    if (entry.type.startsWith('CORRECTION_') && (!entry.notes || entry.notes.trim().length < 8)) throw new Error('Stock corrections require a reason.');
+
   }
   for (const p of state.phases) {
     if (!p.id || !p.name?.trim()) throw new Error('Invalid construction phase.');
@@ -248,6 +248,12 @@ export function validateStateTransition(previous: ProjectState, next: ProjectSta
     }
   };
   unchanged(previous.construction.stockMovements, next.construction.stockMovements, 'Stock');
+  const priorMovements = new Set(previous.construction.stockMovements.map((m)=>m.id));
+  for (const m of next.construction.stockMovements) {
+    if (!priorMovements.has(m.id) && m.type.startsWith('CORRECTION_') && (!m.notes || m.notes.trim().length < 8)) {
+      throw new Error('New stock corrections need a reason of at least 8 characters.');
+    }
+  }
   unchanged(previous.construction.progress, next.construction.progress, 'Progress');
   unchanged(previous.cashReconciliations, next.cashReconciliations, 'Cash-count');
 
