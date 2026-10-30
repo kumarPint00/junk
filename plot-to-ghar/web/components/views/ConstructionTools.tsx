@@ -9,7 +9,10 @@ import { computeLedger, agreementFinancials } from '@/lib/ledger';
 import type { SuiteProps, UpdateSuite } from './ConstructionHub';
 
 type ChildProps = SuiteProps & { patch: UpdateSuite };
-const dateNow = () => new Date().toISOString().slice(0, 10);
+const dateNow = () => {
+  const now = new Date();
+  return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+};
 function validNumber(s: string, min = 0) { const n = Number(s); return Number.isFinite(n) && n >= min ? n : NaN; }
 function ErrorLine({ message }: { message: string }) { return message ? <div className="error" role="alert">{message}</div> : null; }
 function AttachmentLinks({ refs }: { refs: AttachmentRef[] }) {
@@ -368,7 +371,7 @@ export function FinanceView({state,txs}:ChildProps){
   const baseMonth=new Date();baseMonth.setDate(1);
   const forecast=Array.from({length:6},(_,i)=>{
     const d=new Date(baseMonth.getFullYear(),baseMonth.getMonth()+i,1);
-    const key=d.toISOString().slice(0,7);
+    const key=d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0');
     const planned=state.construction.schedule.filter((t)=>t.status!=='COMPLETED' && t.endDate.slice(0,7)===key).reduce((s,t)=>s+t.estimatedCost,0);
     const inflow=(validNumber(monthly)||0) + ((i+1)%6===0 ? (validNumber(semiannual)||0) : 0);
     const emiOutflow=validNumber(monthlyEmi)||0;
