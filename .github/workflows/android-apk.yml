@@ -2,7 +2,7 @@ name: Plot to Ghar Android APK
 
 on:
   push:
-    branches: [main, plot-to-ghar-production-ready]
+    branches: [main, plot-to-ghar-production-ready, plot-to-ghar-standalone-production]
     paths:
       - 'plot-to-ghar/android/**'
       - 'plot-to-ghar/web/**'
