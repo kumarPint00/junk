@@ -19,8 +19,8 @@ export function Home({ state, txs, save, openSection }: { state: ProjectState; t
   const summary = computeLedger(state.accounts, txs);
   const available = Object.values(summary.accountBalances).reduce((a, b) => a + b, 0);
   const committedFunding = state.fundingSources.reduce((a, f) => a + Number(f.committedAmount || 0), 0);
-  const phaseBudget = state.phases.reduce((a, p) => a + Number(p.budgetAmount || 0), 0);
-  const totalBudget = Number(state.project.agreedPurchasePrice || 0) + phaseBudget;
+  const phaseBudget = state.phases.filter(p => p.name !== 'Plot Purchase').reduce((a, p) => a + Number(p.budgetAmount || 0), 0);
+  const totalBudget = Number(state.project.agreedPurchasePrice || 0) + phaseBudget; // Purchase price is not added twice through Plot Purchase phase.
   const budgetRemaining = totalBudget > 0 ? totalBudget - summary.projectCost : 0;
   const next = state.milestones
     .slice()
@@ -47,7 +47,7 @@ export function Home({ state, txs, save, openSection }: { state: ProjectState; t
         </div>
         {editing ? <form className="form detailsBody" onSubmit={submit}>
           <label>Project name<input required value={draft.project.name} onChange={e=>setDraft({...draft,project:{...draft.project,name:e.target.value}})}/></label>
-          <label>Project status<input value={draft.project.status} onChange={e=>setDraft({...draft,project:{...draft.project,status:e.target.value}})}/></label>
+          <label>Project status<select value={draft.project.status} onChange={e=>setDraft({...draft,project:{...draft.project,status:e.target.value}})}><option value="REGISTRY_PENDING">Registry pending</option><option value="REGISTERED">Registered</option><option value="POSSESSION">Possession</option><option value="CONSTRUCTION">Construction</option><option value="COMPLETED">Completed</option></select></label>
           <label>Plot address<textarea value={draft.project.propertyAddress} onChange={e=>setDraft({...draft,project:{...draft.project,propertyAddress:e.target.value}})}/></label>
           <div className="grid2">
             <label>Agreed plot price ₹<input type="number" min="0" value={draft.project.agreedPurchasePrice} onChange={e=>setDraft({...draft,project:{...draft.project,agreedPurchasePrice:Number(e.target.value)}})}/></label>
