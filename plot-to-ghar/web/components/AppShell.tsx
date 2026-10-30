@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AttachmentRef, ProjectState, Transaction, TxType } from '@/lib/types';
-import { defaultState, normalizeState, validateProjectState } from '@/lib/defaults';
+import { defaultState, normalizeState, validateProjectState, validateStateTransition } from '@/lib/defaults';
 import { computeLedger, findPotentialDuplicate, validateTx } from '@/lib/ledger';
 import {
   getLocalState,
@@ -284,6 +284,7 @@ export function AppShell() {
         })
       );
 
+      if (state) validateStateTransition(state, normalized, txs);
       await putLocalState(normalized);
       setState(normalized);
 
