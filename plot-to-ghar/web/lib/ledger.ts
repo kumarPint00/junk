@@ -6,6 +6,7 @@ const txTypes: TxType[] = [
   'EXPENSE',
   'ADVANCE',
   'ADVANCE_ADJUSTMENT',
+  'ADVANCE_REFUND',
   'REFUND',
   'DIRECT_FUNDED_EXPENSE',
   'LOAN_REPAYMENT',
@@ -61,6 +62,10 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
       case 'ADVANCE_ADJUSTMENT':
         advancesOutstanding -= n;
         break;
+      case 'ADVANCE_REFUND':
+        if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
+        advancesOutstanding -= n;
+        break;
       case 'REFUND':
         if (t.destinationAccountId) balances[t.destinationAccountId] = (balances[t.destinationAccountId] || 0) + n;
         break;
@@ -89,7 +94,7 @@ export function computeLedger(accounts: Account[], txs: Transaction[]): LedgerSu
     constructionCost,
     otherCost,
     fundingReceived,
-    advancesOutstanding,
+    advancesOutstanding: Math.max(0, advancesOutstanding),
     loanRepayments,
     accountBalances: balances,
     phaseSpend,
@@ -108,6 +113,19 @@ function checkId(list: { id: string }[] | undefined, id: string | undefined, lab
   if (id && list && !list.some((x) => x.id === id)) throw new Error(`${label} no longer exists.`);
 }
 
+function linkedAdvanceBalance(id: string, txs: Transaction[]) {
+  const advance = txs.find((x) => x.id === id && x.type === 'ADVANCE');
+  if (!advance) throw new Error('Linked advance is invalid.');
+  const settled = txs
+    .filter(
+      (x) =>
+        (x.type === 'ADVANCE_ADJUSTMENT' || x.type === 'ADVANCE_REFUND') &&
+        x.linkedTransactionId === advance.id
+    )
+    .reduce((sum, x) => sum + Number(x.amount || 0), 0);
+  return { advance, remaining: Number(advance.amount) - settled };
+}
+
 export function validateTx(t: Partial<Transaction>, context: ValidationContext = {}) {
   const amount = Number(t.amount || 0);
   if (!t.type || !txTypes.includes(t.type as TxType)) throw new Error('Invalid transaction type.');
@@ -123,7 +141,7 @@ export function validateTx(t: Partial<Transaction>, context: ValidationContext =
   if (['EXPENSE', 'ADVANCE', 'LOAN_REPAYMENT'].includes(t.type) && !t.sourceAccountId) {
     throw new Error('Payment account is required.');
   }
-  if (['FUNDING_IN', 'REFUND'].includes(t.type) && !t.destinationAccountId) {
+  if (['FUNDING_IN', 'REFUND', 'ADVANCE_REFUND'].includes(t.type) && !t.destinationAccountId) {
     throw new Error('Destination account is required.');
   }
   if (['FUNDING_IN', 'DIRECT_FUNDED_EXPENSE'].includes(t.type) && !t.fundingSourceId) {
@@ -152,17 +170,10 @@ export function validateTx(t: Partial<Transaction>, context: ValidationContext =
   }
 
   const txs = context.transactions || [];
-  if (t.type === 'ADVANCE_ADJUSTMENT') {
-    const outstanding = computeLedger(state?.accounts || [], txs).advancesOutstanding;
-    if (amount > outstanding + 0.01) throw new Error('Advance adjustment exceeds total outstanding advances.');
-    if (t.linkedTransactionId) {
-      const advance = txs.find((x) => x.id === t.linkedTransactionId);
-      if (!advance || advance.type !== 'ADVANCE') throw new Error('Linked advance is invalid.');
-      const adjusted = txs
-        .filter((x) => x.type === 'ADVANCE_ADJUSTMENT' && x.linkedTransactionId === advance.id)
-        .reduce((sum, x) => sum + Number(x.amount || 0), 0);
-      if (adjusted + amount > advance.amount + 0.01) throw new Error('This adjustment exceeds the linked advance balance.');
-    }
+  if (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') {
+    if (!t.linkedTransactionId) throw new Error('Select the advance being settled.');
+    const { remaining } = linkedAdvanceBalance(t.linkedTransactionId, txs);
+    if (amount > remaining + 0.01) throw new Error('This entry exceeds the linked advance balance.');
   }
   if (t.type === 'REFUND') {
     const currentCost = computeLedger(state?.accounts || [], txs).projectCost;
