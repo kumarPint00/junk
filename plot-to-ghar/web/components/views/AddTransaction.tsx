@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { AttachmentRef, LineItem, ProjectState, Transaction, TxType } from '@/lib/types';
 import { saveLocalAttachment } from '@/lib/local-db';
+import { refundableExpenses, unsettledAdvances } from '@/lib/ledger';
 import { money, PageTitle } from '@/components/ui';
 
 async function compressImage(file: File) {
@@ -61,21 +62,8 @@ export function AddTransaction({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
 
-  const openAdvances = useMemo(() => {
-    return txs
-      .filter((t) => t.type === 'ADVANCE')
-      .map((advance) => {
-        const settled = txs
-          .filter(
-            (t) =>
-              (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') &&
-              t.linkedTransactionId === advance.id
-          )
-          .reduce((sum, t) => sum + t.amount, 0);
-        return { advance, remaining: advance.amount - settled };
-      })
-      .filter((x) => x.remaining > 0.01);
-  }, [txs]);
+  const openAdvances = useMemo(() => unsettledAdvances(txs), [txs]);
+  const refundable = useMemo(() => refundableExpenses(txs), [txs]);
 
   const itemTotal = items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
   const finalAmount = items.length ? itemTotal : Number(amount || 0);
@@ -128,11 +116,27 @@ export function AddTransaction({
     setLinkedTransactionId(id);
     const found = openAdvances.find((x) => x.advance.id === id)?.advance;
     if (found) {
+      setCostBucket(found.costBucket || 'CONSTRUCTION');
+      setPhaseId(found.phaseId || '');
       setContractorId(found.contractorId || '');
       setPayee(found.payee || '');
       setCategory(found.category || 'Advance settlement');
       if (type === 'ADVANCE_REFUND') setDest(found.sourceAccountId || '');
     }
+  }
+
+  function selectRefund(id: string) {
+    setLinkedTransactionId(id);
+    const original = refundable.find((x) => x.original.id === id)?.original;
+    if (!original) return;
+    setCostBucket(original.costBucket || 'OTHER');
+    setPhaseId(original.phaseId || '');
+    setMilestoneId(original.milestoneId || '');
+    setCategory(original.category || 'Expense refund');
+    setPayee(original.payee || '');
+    setVendorId(original.vendorId || '');
+    setContractorId(original.contractorId || '');
+    setDescription('Refund for expense ' + original.id);
   }
 
   async function submit(e: React.FormEvent) {
@@ -152,10 +156,14 @@ export function AddTransaction({
       destinationAccountId: dest || undefined,
       fundingSourceId: funding || undefined,
       milestoneId: milestoneId || undefined,
-      phaseId: phaseId || undefined,
+      phaseId: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.phaseId
+        : phaseId || undefined,
       vendorId: vendorId || undefined,
       contractorId: contractorId || undefined,
-      costBucket,
+      costBucket: type === 'REFUND' && linkedTransactionId
+        ? refundable.find((x) => x.original.id === linkedTransactionId)?.original.costBucket || 'OTHER'
+        : costBucket,
       category: category.trim() || undefined,
       payee: payee.trim() || undefined,
       referenceNumber: referenceNumber.trim() || undefined,
@@ -177,12 +185,14 @@ export function AddTransaction({
       <PageTitle title="Add Transaction" description="Transfers, funding, advances and actual cost are accounted separately." />
       {prefill ? <p className="warning">OCR prepared this draft. Verify amount, date, vendor, payment account and the receipt before saving. Nothing has been posted yet.</p> : null}
       <form className="panel form" onSubmit={submit}>
+        <p className="muted">Record money movements here. Ledger entries cannot be silently edited after saving; use a linked refund or correcting reversal.</p>
         <label>
           Transaction type
           <select value={type} onChange={(e) => {
             const next = e.target.value as TxType;
             setType(next);
             setLinkedTransactionId('');
+            setItems([]);
           }}>
             <option value="EXPENSE">Expense</option>
             <option value="TRANSFER">Transfer — not an expense</option>
@@ -244,6 +254,21 @@ export function AddTransaction({
           </label>
         ) : null}
 
+        {type === 'REFUND' ? (
+          <label>
+            Original expense to refund
+            <select required value={linkedTransactionId} onChange={(e) => selectRefund(e.target.value)}>
+              <option value="">Choose refundable purchase…</option>
+              {refundable.map(({ original, remaining }) => (
+                <option value={original.id} key={original.id}>
+                  {String(original.transactionDate).slice(0, 10)} · {original.payee || original.category || original.type} · available {money(remaining)}
+                </option>
+              ))}
+            </select>
+            {!refundable.length ? <small>No eligible expenses. Record the original purchase before its refund.</small> : null}
+          </label>
+        ) : null}
+
         {settlesAdvance ? (
           <label>
             Advance to settle
@@ -261,7 +286,7 @@ export function AddTransaction({
         {isCost ? (
           <label>
             Cost bucket
-            <select value={costBucket} onChange={(e) => setCostBucket(e.target.value as typeof costBucket)}>
+            <select disabled={type === 'REFUND'} value={costBucket} onChange={(e) => setCostBucket(e.target.value as typeof costBucket)}>
               <option value="ACQUISITION">Plot / registry / acquisition</option>
               <option value="CONSTRUCTION">Construction</option>
               <option value="OTHER">Other project cost</option>
@@ -279,7 +304,7 @@ export function AddTransaction({
           </label>
           <label>
             Construction phase
-            <select value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
+            <select disabled={type === 'REFUND'} value={phaseId} onChange={(e) => setPhaseId(e.target.value)}>
               <option value="">None</option>
               {state.phases.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
