@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { AttachmentRef, LineItem, ProjectState, Transaction, TxType } from '@/lib/types';
+import { saveLocalAttachment } from '@/lib/local-db';
 import { money, PageTitle } from '@/components/ui';
 
 async function compressImage(file: File) {
@@ -30,10 +31,12 @@ export function AddTransaction({
   state,
   txs,
   onSave,
+  mode,
 }: {
   state: ProjectState;
   txs: Transaction[];
   onSave: (t: Transaction) => Promise<void>;
+  mode: 'cloud' | 'standalone';
 }) {
   const [type, setType] = useState<TxType>('EXPENSE');
   const [amount, setAmount] = useState('');
@@ -60,10 +63,14 @@ export function AddTransaction({
     return txs
       .filter((t) => t.type === 'ADVANCE')
       .map((advance) => {
-        const adjusted = txs
-          .filter((t) => t.type === 'ADVANCE_ADJUSTMENT' && t.linkedTransactionId === advance.id)
+        const settled = txs
+          .filter(
+            (t) =>
+              (t.type === 'ADVANCE_ADJUSTMENT' || t.type === 'ADVANCE_REFUND') &&
+              t.linkedTransactionId === advance.id
+          )
           .reduce((sum, t) => sum + t.amount, 0);
-        return { advance, remaining: advance.amount - adjusted };
+        return { advance, remaining: advance.amount - settled };
       })
       .filter((x) => x.remaining > 0.01);
   }, [txs]);
@@ -80,6 +87,10 @@ export function AddTransaction({
       for (const original of Array.from(files)) {
         const file = await compressImage(original);
         if (file.size > 8 * 1024 * 1024) throw new Error(`${file.name} exceeds the 8 MB evidence limit.`);
+        if (mode === 'standalone') {
+          refs.push(await saveLocalAttachment(file));
+          continue;
+        }
         const fd = new FormData();
         fd.append('file', file);
         const response = await fetch('/api/attachments', { method: 'POST', body: fd });
@@ -117,7 +128,8 @@ export function AddTransaction({
     if (found) {
       setContractorId(found.contractorId || '');
       setPayee(found.payee || '');
-      setCategory(found.category || 'Advance adjustment');
+      setCategory(found.category || 'Advance settlement');
+      if (type === 'ADVANCE_REFUND') setDest(found.sourceAccountId || '');
     }
   }
 
@@ -154,7 +166,8 @@ export function AddTransaction({
   }
 
   const needsSource = ['EXPENSE', 'TRANSFER', 'ADVANCE', 'LOAN_REPAYMENT'].includes(type);
-  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND'].includes(type);
+  const needsDest = ['FUNDING_IN', 'TRANSFER', 'REFUND', 'ADVANCE_REFUND'].includes(type);
+  const settlesAdvance = ['ADVANCE_ADJUSTMENT', 'ADVANCE_REFUND'].includes(type);
   const isCost = ['EXPENSE', 'ADVANCE_ADJUSTMENT', 'REFUND', 'DIRECT_FUNDED_EXPENSE'].includes(type);
 
   return (
@@ -163,12 +176,17 @@ export function AddTransaction({
       <form className="panel form" onSubmit={submit}>
         <label>
           Transaction type
-          <select value={type} onChange={(e) => setType(e.target.value as TxType)}>
+          <select value={type} onChange={(e) => {
+            const next = e.target.value as TxType;
+            setType(next);
+            setLinkedTransactionId('');
+          }}>
             <option value="EXPENSE">Expense</option>
             <option value="TRANSFER">Transfer — not an expense</option>
             <option value="FUNDING_IN">Funding received</option>
             <option value="ADVANCE">Advance paid</option>
-            <option value="ADVANCE_ADJUSTMENT">Recognize contractor advance</option>
+            <option value="ADVANCE_ADJUSTMENT">Recognize contractor advance as work</option>
+            <option value="ADVANCE_REFUND">Advance returned — not an expense</option>
             <option value="REFUND">Expense refund</option>
             <option value="DIRECT_FUNDED_EXPENSE">Lender paid expense directly</option>
             <option value="LOAN_REPAYMENT">Loan repayment — not project cost</option>
@@ -223,9 +241,9 @@ export function AddTransaction({
           </label>
         ) : null}
 
-        {type === 'ADVANCE_ADJUSTMENT' ? (
+        {settlesAdvance ? (
           <label>
-            Advance to adjust
+            Advance to settle
             <select required value={linkedTransactionId} onChange={(e) => selectAdvance(e.target.value)}>
               <option value="">Choose open advance…</option>
               {openAdvances.map(({ advance, remaining }) => (
@@ -313,28 +331,10 @@ export function AddTransaction({
 
         {items.map((item, i) => (
           <div className="lineItem" key={i}>
-            <input
-              value={item.description}
-              onChange={(e) => updateItem(i, { description: e.target.value })}
-              placeholder="Cement / steel / bricks"
-            />
-            <input
-              inputMode="decimal"
-              value={item.quantity ?? ''}
-              onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })}
-              placeholder="Qty"
-            />
-            <input
-              value={item.unit || ''}
-              onChange={(e) => updateItem(i, { unit: e.target.value })}
-              placeholder="bag/kg"
-            />
-            <input
-              inputMode="decimal"
-              value={item.rate ?? ''}
-              onChange={(e) => updateItem(i, { rate: Number(e.target.value) })}
-              placeholder="Rate"
-            />
+            <input value={item.description} onChange={(e) => updateItem(i, { description: e.target.value })} placeholder="Cement / steel / bricks" />
+            <input inputMode="decimal" value={item.quantity ?? ''} onChange={(e) => updateItem(i, { quantity: Number(e.target.value) })} placeholder="Qty" />
+            <input value={item.unit || ''} onChange={(e) => updateItem(i, { unit: e.target.value })} placeholder="bag/kg" />
+            <input inputMode="decimal" value={item.rate ?? ''} onChange={(e) => updateItem(i, { rate: Number(e.target.value) })} placeholder="Rate" />
             <b>{money(item.amount)}</b>
             <button type="button" className="iconButton" onClick={() => setItems((x) => x.filter((_, n) => n !== i))}>×</button>
           </div>
@@ -344,20 +344,10 @@ export function AddTransaction({
 
         <label>
           Receipt / photo / PDF
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,application/pdf"
-            multiple
-            capture="environment"
-            onChange={(e) => upload(e.target.files)}
-          />
+          <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" multiple capture="environment" onChange={(e) => upload(e.target.files)} />
         </label>
-        {uploading ? <small>Compressing and uploading evidence…</small> : null}
-        {attachments.length ? (
-          <div className="chips">
-            {attachments.map((a) => <span key={a.pathname}>{a.name}</span>)}
-          </div>
-        ) : null}
+        {uploading ? <small>{mode === 'standalone' ? 'Compressing and saving evidence on this device…' : 'Compressing and uploading evidence…'}</small> : null}
+        {attachments.length ? <div className="chips">{attachments.map((a) => <span key={a.pathname}>{a.name}</span>)}</div> : null}
         {error ? <div className="error">{error}</div> : null}
 
         <button className="primary" disabled={uploading}>Save transaction</button>
