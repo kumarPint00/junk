@@ -125,6 +125,7 @@ export type ContractorAgreement = {
 export type ProgressEntry = {
   id: string;
   date: string;
+  createdAt?: string;
   phaseId?: string;
   floorId?: string;
   taskId?: string;
