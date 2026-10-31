@@ -286,7 +286,7 @@ export function More({
         <div className="row"><span>Runtime mode</span><b>{mode === 'standalone' ? 'On-device / zero-cost' : 'Cloud sync'}</b></div>
         <div className="row"><span>Database</span><b>{mode === 'standalone' ? 'IndexedDB ready' : health?.database ? 'Cloud ready' : 'Unavailable'}</b></div>
         <div className="row"><span>Evidence storage</span><b>{mode === 'standalone' ? 'On-device ready' : health?.storageConfigured ? 'Cloud ready' : 'Not configured'}</b></div>
-        <div className="row"><span>App version</span><b>{health?.version || '2.5.0'}</b></div>
+        <div className="row"><span>App version</span><b>{health?.version || '2.5.1'}</b></div>
         <button className="secondary" onClick={() => onLock()}>Lock app</button>
       </section>
     </div>
