@@ -574,7 +574,7 @@ export function AppShell() {
         {tab === 'journey' ? <Journey state={state} save={saveState} focusSection={journeyFocus} onEditProperty={() => goTo('more','property')} /> : null}
         {tab === 'build' ? <ConstructionHub initialTab={buildTab} state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); goTo('add'); }} onEditFunding={() => goTo('more', 'funding')} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
-        {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} initialType={ledgerType} focusTransactionId={ledgerFocus} /> : null}
+        {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} initialType={ledgerType} focusTransactionId={ledgerFocus} onAdd={() => goTo('add')} /> : null}
         {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} focusSection={controlFocus} openSection={goTo} /> : null}
       </main>
 
