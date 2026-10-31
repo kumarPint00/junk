@@ -13,6 +13,8 @@ export function More({
   reload,
   mode,
   onLock,
+  focusSection = 'property',
+  openSection,
 }: {
   state: ProjectState;
   txs: Transaction[];
@@ -20,14 +22,38 @@ export function More({
   reload: () => Promise<void>;
   mode: 'cloud' | 'standalone';
   onLock: () => Promise<void>;
+  focusSection?: 'property' | 'accounts' | 'funding' | 'partners' | 'cash';
+  openSection: (tab: 'journey' | 'build' | 'add' | 'ledger' | 'more', feature?: string) => void;
 }) {
   const [draft, setDraft] = useState<ProjectState>(() => structuredClone(state));
   const [restore, setRestore] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const hasEdits = useMemo(() => JSON.stringify(draft) !== JSON.stringify(state), [draft, state]);
   const [cashAccount, setCashAccount] = useState(state.accounts.find((a) => a.type === 'CASH')?.id || '');
   const [countedCash, setCountedCash] = useState('');
   const [health, setHealth] = useState<{ ok?: boolean; database?: boolean; storageConfigured?: boolean; version?: string } | null>(null);
 
   useEffect(() => setDraft(structuredClone(state)), [state]);
+  useEffect(() => {
+    const element = document.getElementById('ptg-control-' + focusSection) as HTMLDetailsElement | null;
+    if (element) {
+      element.open = true;
+      const frame = requestAnimationFrame(() => element.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [focusSection]);
+
+  async function saveControls() {
+    setSaving(true); setFeedback('');
+    try {
+      await save(draft);
+      setFeedback('Settings saved on this device. If cloud sync is pending, check the status banner.');
+    } catch (e) {
+      setFeedback(e instanceof Error ? e.message : 'Saving project settings failed.');
+    } finally { setSaving(false); }
+  }
+
   useEffect(() => {
     fetch('/api/health', { cache: 'no-store' }).then((r) => r.json()).then(setHealth).catch(() => setHealth({ ok: false }));
   }, []);
@@ -108,10 +134,19 @@ export function More({
 
   return (
     <div className="stack">
-      <PageTitle title="Project Control" description="Property, accounts, funding, loans, vendors, contractors, cash and recovery." />
+      <PageTitle title="Project Control" description="Edit property, accounts, funding, loans and contractors. Save changes using the bar below." />
+      <section className="panel controlHelp">
+        <div className="sectionHead"><div><h2>What can I change?</h2><p>Configuration can be edited here. Actual spending and current balances are calculated from transactions.</p></div></div>
+        <div className="controlShortcuts">
+          <button type="button" className="secondary small" onClick={() => openSection('add')}>+ Record payment or funding</button>
+          <button type="button" className="secondary small" onClick={() => openSection('ledger')}>View actual transactions</button>
+          <button type="button" className="secondary small" onClick={() => openSection('journey', 'budgets')}>Edit phase budgets</button>
+          <button type="button" className="secondary small" onClick={() => openSection('build', 'finance')}>Loan and EMI simulator</button>
+        </div>
+      </section>
 
-      <details className="panel" open>
-        <summary>Property & registry profile</summary>
+      <details className="panel focusSection" id="ptg-control-property" open={focusSection === 'property'}>
+        <summary>Property & registry profile <span className="summaryEdit">Edit <span aria-hidden="true">✎</span></span></summary>
         <div className="form detailsBody">
           <label>Project name<input value={draft.project.name} onChange={(e) => setDraft({ ...draft, project: { ...draft.project, name: e.target.value } })} /></label>
           <label>Property address<textarea value={draft.project.propertyAddress} onChange={(e) => setDraft({ ...draft, project: { ...draft.project, propertyAddress: e.target.value } })} /></label>
@@ -127,16 +162,17 @@ export function More({
         </div>
       </details>
 
-      <details className="panel">
-        <summary>Accounts</summary>
+      <details className="panel focusSection" id="ptg-control-accounts" open={focusSection === 'accounts'}>
+        <summary>Accounts & opening balances <span className="summaryEdit">Edit <span aria-hidden="true">✎</span></span></summary>
         <div className="detailsBody">
+          <p className="warning">Opening balance is your account's initial balance before recorded transactions, not its current available cash. Record new deposits, payments or transfers using Add Transaction.</p>
           {draft.accounts.map((a, i) => (
             <div className="editRow accountEdit" key={a.id}>
               <input value={a.name} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, name: e.target.value }; setDraft({ ...draft, accounts: rows }); }} />
               <select value={a.type} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, type: e.target.value as typeof a.type }; setDraft({ ...draft, accounts: rows }); }}>
                 <option value="BANK">Bank</option><option value="CASH">Cash</option><option value="OTHER">Other</option>
               </select>
-              <input inputMode="decimal" value={a.openingBalance} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, openingBalance: Number(e.target.value) }; setDraft({ ...draft, accounts: rows }); }} />
+              <label className="controlValueLabel">Opening ₹<input aria-label={'Opening balance for '+a.name} type="number" step="any" value={a.openingBalance} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, openingBalance: Number(e.target.value) }; setDraft({ ...draft, accounts: rows }); }} /></label>
               <label className="check"><input type="checkbox" checked={a.active} onChange={(e) => { const rows = [...draft.accounts]; rows[i] = { ...a, active: e.target.checked }; setDraft({ ...draft, accounts: rows }); }} />Active</label>
             </div>
           ))}
@@ -144,9 +180,10 @@ export function More({
         </div>
       </details>
 
-      <details className="panel">
-        <summary>Funding & loans</summary>
+      <details className="panel focusSection" id="ptg-control-funding" open={focusSection === 'funding'}>
+        <summary>Funding & loan facilities <span className="summaryEdit">Edit <span aria-hidden="true">✎</span></span></summary>
         <div className="detailsBody">
+          <p className="muted">Edit commitments and lender terms here. Sanctioned funds are not counted as received until disbursement is recorded in the ledger.</p>
           <h3>Funding commitments</h3>
           {draft.fundingSources.map((f, i) => (
             <div className="editRow" key={f.id}>
@@ -175,8 +212,8 @@ export function More({
         </div>
       </details>
 
-      <details className="panel">
-        <summary>Vendors & contractors</summary>
+      <details className="panel focusSection" id="ptg-control-partners" open={focusSection === 'partners'}>
+        <summary>Vendors & contractors <span className="summaryEdit">Edit <span aria-hidden="true">✎</span></span></summary>
         <div className="detailsBody">
           <h3>Vendors</h3>
           {draft.vendors.map((v, i) => (
@@ -202,8 +239,8 @@ export function More({
         </div>
       </details>
 
-      <details className="panel">
-        <summary>Cash reconciliation</summary>
+      <details className="panel focusSection" id="ptg-control-cash" open={focusSection === 'cash'}>
+        <summary>Cash reconciliation <span className="summaryEdit">Manage <span aria-hidden="true">✎</span></span></summary>
         <div className="detailsBody">
           <label>Cash account<select value={cashAccount} onChange={(e) => setCashAccount(e.target.value)}><option value="">Choose…</option>{state.accounts.filter((a) => a.type === 'CASH').map((a) => <option value={a.id} key={a.id}>{a.name}</option>)}</select></label>
           <div className="row"><span>System cash</span><b>{money(systemCash)}</b></div>
@@ -219,7 +256,12 @@ export function More({
         </div>
       </details>
 
-      <button className="primary" onClick={() => save(draft)}>Save project controls</button>
+      <div className="controlSaveBar" role="status">
+        <div><b>{hasEdits ? 'Unsaved changes' : 'All settings saved'}</b><small>{hasEdits ? 'Save your edits before leaving this screen.' : 'Your latest property configuration is displayed.'}</small>
+          {feedback && <small className="controlFeedback">{feedback}</small>}</div>
+        <div className="formActions"><button type="button" className="secondary small" disabled={!hasEdits || saving} onClick={() => {setDraft(structuredClone(state));setFeedback('Edits discarded.');}}>Discard</button>
+        <button type="button" className="primary" disabled={!hasEdits || saving} onClick={saveControls}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+      </div>
 
       <section className="panel">
         <h2>Backup & recovery</h2>
