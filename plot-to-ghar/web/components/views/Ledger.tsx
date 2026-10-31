@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ProjectState, Transaction, TxType } from '@/lib/types';
 import { openLocalAttachment } from '@/lib/local-db';
 import { money, PageTitle } from '@/components/ui';
@@ -16,14 +16,29 @@ export function Ledger({
   txs,
   onVoid,
   mode,
+  initialType = 'ALL',
+  focusTransactionId = null,
+  onAdd,
 }: {
   state: ProjectState;
   txs: Transaction[];
   onVoid: (id: string) => Promise<void>;
   mode: 'cloud' | 'standalone';
+  initialType?: 'ALL' | TxType;
+  focusTransactionId?: string | null;
+  onAdd?: () => void;
 }) {
   const [q, setQ] = useState('');
-  const [type, setType] = useState<'ALL' | TxType>('ALL');
+  const [type, setType] = useState<'ALL' | TxType>(initialType);
+  const [selectedId, setSelectedId] = useState<string | null>(focusTransactionId);
+  useEffect(() => {
+    setType(initialType);
+    if (focusTransactionId) {
+      setSelectedId(focusTransactionId);
+      setQ('');
+      setPhase('ALL');
+    } else setSelectedId(null);
+  }, [initialType, focusTransactionId]);
   const [phase, setPhase] = useState('ALL');
 
   const reversed = useMemo(() => new Set(txs.map((t) => t.reversalOf).filter(Boolean)), [txs]);
@@ -31,6 +46,11 @@ export function Ledger({
   const phaseName = (id?: string) => state.phases.find((p) => p.id === id)?.name || '';
   const vendorName = (id?: string) => state.vendors.find((p) => p.id === id)?.name || '';
   const contractorName = (id?: string) => state.contractors.find((p) => p.id === id)?.name || '';
+
+  const selected = selectedId ? txs.find(t => t.id === selectedId) : null;
+  const selectedReversed = selected ? txs.some(t=>t.reversalOf===selected.id) : false;
+  const canReverseSelected = selected && ['EXPENSE','TRANSFER','ADVANCE'].includes(selected.type)
+    && !selected.reversalOf && !selectedReversed;
 
   const rows = [...txs]
     .reverse()
@@ -76,7 +96,36 @@ export function Ledger({
 
   return (
     <div className="stack">
-      <PageTitle title="Ledger" description="Append-only project money trail with evidence and safe reversals." />
+      <PageTitle title="Ledger" description="Tap Details on a transaction to inspect the entry. Corrections are recorded separately." />
+      <div className="ledgerQuickActions">
+        {onAdd && <button type="button" className="primary small" onClick={onAdd}>+ Record transaction</button>}
+        <span>Amounts shown here come from recorded entries, not editable dashboard totals.</span>
+      </div>
+      {selected && <section className="panel transactionDetails" aria-label="Selected transaction details">
+        <div className="sectionHead"><div><h2>Transaction details</h2><p>Original entry · {selected.type.replaceAll('_',' ')}</p></div>
+          <button type="button" className="secondary small" onClick={() => setSelectedId(null)}>Close details ×</button></div>
+        <div className="transactionDetailAmount">{money(selected.amount)}</div>
+        <div className="transactionFacts">
+          <div><small>Recorded date</small><b>{new Date(selected.transactionDate).toLocaleDateString('en-IN')}</b></div>
+          <div><small>Category</small><b>{selected.category || 'Not categorized'}</b></div>
+          <div><small>Cost bucket</small><b>{selected.costBucket || 'Not applicable'}</b></div>
+          <div><small>From account</small><b>{accountName(selected.sourceAccountId) || '—'}</b></div>
+          <div><small>To account</small><b>{accountName(selected.destinationAccountId) || '—'}</b></div>
+          <div><small>Project phase</small><b>{phaseName(selected.phaseId) || '—'}</b></div>
+          <div><small>Vendor / payee</small><b>{selected.payee || vendorName(selected.vendorId) || contractorName(selected.contractorId) || '—'}</b></div>
+          <div><small>Reference</small><b>{selected.referenceNumber || '—'}</b></div>
+        </div>
+        {selected.description && <p className="muted">{selected.description}</p>}
+        {!!selected.attachments?.length && <div className="docActions">{selected.attachments.map(a=><button type="button" className="textLink" key={a.pathname} onClick={()=>openEvidence(a.pathname).catch(e=>alert(e instanceof Error?e.message:'Cannot open evidence'))}>{a.name}</button>)}</div>}
+        <div className="transactionAdvice">
+          Direct editing is disabled to protect your audit trail. If a recorded expense, transfer or advance is incorrect, create a reversal and enter the corrected transaction.
+        </div>
+        {selectedReversed && <small className="muted">This entry has already been reversed.</small>}
+        <div className="formActions">
+          {canReverseSelected && <button type="button" className="danger" onClick={()=>onVoid(selected.id)}>Reverse this entry</button>}
+          {onAdd && <button type="button" className="primary" onClick={onAdd}>+ Add correcting transaction</button>}
+        </div>
+      </section>}
 
       <div className="toolbar">
         <input className="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search ledger…" />
@@ -146,6 +195,7 @@ export function Ledger({
                   </div>
                 ) : null}
                 {reversed.has(t.id) ? <small className="muted">Reversed by a correcting entry</small> : null}
+                <button type="button" className="detailLink" onClick={() => {setSelectedId(t.id);window.scrollTo({top:0,behavior:'smooth'});}}>View details →</button>
               </div>
               <div className="ledgerAmount">
                 <strong className={t.type === 'FUNDING_IN' ? 'positive' : ''}>{money(t.amount)}</strong>
