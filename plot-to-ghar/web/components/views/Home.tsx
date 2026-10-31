@@ -140,6 +140,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
         <div className="heroActions">
           <button className="heroActionPrimary" type="button" onClick={() => openSection('add')}><Plus size={17} /> Record transaction</button>
           <button className="heroActionSecondary" type="button" onClick={() => openSection('journey')}>View journey <ArrowRight size={16} /></button>
+          <button className="heroActionSecondary" type="button" onClick={() => { setDraft(structuredClone(state)); setEditing(true); window.scrollTo({ top: 0, behavior: 'smooth' }); }}><Pencil size={15} /> Edit property</button>
         </div>
       </div>
       <div className="heroIllustration" aria-hidden="true">
@@ -162,12 +163,38 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
       </div>
     </section>
 
-    <section className="metricGrid" aria-label="Project financial summary">
-      <div className="metricCard"><div className="metricHead"><span className="metricIcon green"><Wallet size={19} /></span><ArrowUpRight size={17} className="metricArrow" /></div><small>Available cash</small><strong>{money(available)}</strong><span className="metricHint">Tracked account balances</span></div>
-      <div className="metricCard"><div className="metricHead"><span className="metricIcon blue"><Landmark size={19} /></span><ArrowDownRight size={17} className="metricArrow" /></div><small>Funding received</small><strong>{money(summary.fundingReceived)}</strong><span className="metricHint">Actual inflows + direct funding</span></div>
-      <div className="metricCard"><div className="metricHead"><span className="metricIcon coral"><Receipt size={19} /></span><TrendingUp size={17} className="metricArrow" /></div><small>Project spending</small><strong>{money(summary.projectCost)}</strong><span className="metricHint">Recognized costs, net refunds</span></div>
-      <div className="metricCard"><div className="metricHead"><span className="metricIcon violet"><Layers3 size={19} /></span><ChevronRight size={17} className="metricArrow" /></div><small>Budget remaining</small><strong>{totalBudget ? money(totalBudget - summary.projectCost) : 'Not set'}</strong><span className="metricHint">Against plot + phase budget</span></div>
+    <section className="metricGrid" aria-label="Project financial summary — tap cards to manage underlying records">
+      <button type="button" className="metricCard metricAction" onClick={() => openSection('more', 'accounts')} aria-label="Manage accounts and review available cash">
+        <div className="metricHead"><span className="metricIcon green"><Wallet size={19} /></span><ArrowUpRight size={17} className="metricArrow" /></div>
+        <small>Available cash</small><strong>{money(available)}</strong>
+        <span className="metricHint">Tracked bank and cash accounts</span>
+        <span className="metricCta">Manage accounts <ArrowRight size={14} /></span>
+      </button>
+      <button type="button" className="metricCard metricAction" onClick={() => openSection('build', 'reports')} aria-label="View recorded funding and account reports">
+        <div className="metricHead"><span className="metricIcon blue"><Landmark size={19} /></span><ArrowDownRight size={17} className="metricArrow" /></div>
+        <small>Funding received</small><strong>{money(summary.fundingReceived)}</strong>
+        <span className="metricHint">Actual funding entries only</span>
+        <span className="metricCta">View funding report <ArrowRight size={14} /></span>
+      </button>
+      <button type="button" className="metricCard metricAction" onClick={() => openSection('build', 'reports')} aria-label="View expense breakdown and recorded project costs">
+        <div className="metricHead"><span className="metricIcon coral"><Receipt size={19} /></span><TrendingUp size={17} className="metricArrow" /></div>
+        <small>Project spending</small><strong>{money(summary.projectCost)}</strong>
+        <span className="metricHint">Actual costs net of refunds</span>
+        <span className="metricCta">See cost breakdown <ArrowRight size={14} /></span>
+      </button>
+      <button type="button" className="metricCard metricAction" onClick={() => openSection('journey', 'budgets')} aria-label="Edit project phase budgets">
+        <div className="metricHead"><span className="metricIcon violet"><Layers3 size={19} /></span><ChevronRight size={17} className="metricArrow" /></div>
+        <small>Budget remaining</small><strong>{totalBudget ? money(totalBudget - summary.projectCost) : 'Not set'}</strong>
+        <span className="metricHint">Plot price plus phase allocations</span>
+        <span className="metricCta">Edit budgets <Pencil size={14} /></span>
+      </button>
     </section>
+    <div className="dashboardActions" aria-label="Quick project actions">
+      <button type="button" onClick={() => openSection('journey', 'budgets')}><Pencil size={16} /> Edit budgets</button>
+      <button type="button" onClick={() => openSection('more', 'funding')}><Landmark size={16} /> Edit loan & funding terms</button>
+      <button type="button" onClick={() => openSection('add')}><Plus size={16} /> Add money movement</button>
+      <button type="button" onClick={() => openSection('ledger')}><Receipt size={16} /> View transactions</button>
+    </div>
 
     <section className="moduleSection">
       <div className="dashSectionTitle"><div><h2>Manage your project</h2><p>Everything you need, organized by workstream.</p></div></div>
@@ -188,7 +215,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
         <div className="sectionHead"><div><h2>Financial overview</h2><p>Actual funding versus recognized costs · last 6 months</p></div>
           <button className="textLink" type="button" onClick={() => openSection('build', 'reports')}>Reports <ArrowRight size={15} /></button>
         </div>
-        {hasChartData ? <div className="chartBlock" role="img" aria-label="Six-month comparison of monthly funding and recognized project costs">
+        {hasChartData ? <button type="button" className="chartBlock chartAction" onClick={() => openSection('build', 'reports')} aria-label="Open detailed six-month financial report">
           <div className="chartGridLines"><span>{money(chartMax)}</span><span>{money(chartMax / 2)}</span><span>₹0</span></div>
           <div className="chartColumns">
             {monthlyData.map(m => <div className="chartColumn" key={m.key}>
@@ -198,7 +225,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
               </div><span>{m.label}</span>
             </div>)}
           </div>
-        </div> : <div className="emptyChart"><TrendingUp size={29} /><b>Your chart will appear here</b><p>Record funding and expenses to compare your monthly cash movement.</p></div>}
+        </button> : <div className="emptyChart"><TrendingUp size={29} /><b>Your chart will appear here</b><p>Record funding and expenses to compare your monthly cash movement.</p></div>}
         <div className="chartLegend"><span><i className="legendFunding" /> Funding</span><span><i className="legendSpending" /> Project costs</span></div>
       </section>
 
@@ -206,13 +233,13 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
         <div className="sectionHead"><div><h2>Project progress</h2><p>Milestones and construction planning</p></div>
           <button className="textLink" type="button" onClick={() => openSection('journey')}>Journey <ArrowRight size={15} /></button>
         </div>
-        <div className="progressOverview">
+        <button type="button" className="progressOverview progressAction" onClick={() => openSection('journey', 'milestones')} aria-label="Edit project milestones">
           <div className="progressRing" style={{ '--value': (milestonesCount ? (completedMilestones / milestonesCount) * 100 : 0) + '%' } as React.CSSProperties}>
             <div><strong>{milestonesCount ? Math.round(completedMilestones / milestonesCount * 100) : 0}%</strong><small>milestones</small></div>
           </div>
-          <div className="progressSummary"><strong>{completedMilestones} of {milestonesCount}</strong><span>Milestones complete</span><small>Next: {nextMilestone?.name || 'All milestones completed'}</small></div>
-        </div>
-        <div className="budgetStrip"><div className="row"><span>Budget utilization</span><strong>{totalBudget ? Math.round(spentRatio) + '%' : 'Set budget'}</strong></div><progress max={100} value={spentRatio} /><small>{money(summary.projectCost)} spent {totalBudget ? 'of ' + money(totalBudget) : '· no complete budget yet'}</small></div>
+          <div className="progressSummary"><strong>{completedMilestones} of {milestonesCount}</strong><span>Milestones complete</span><small>Next: {nextMilestone?.name || 'All milestones completed'}</small><span className="metricCta">Update milestones <Pencil size={13}/></span></div>
+        </button>
+        <button type="button" className="budgetStrip budgetAction" onClick={() => openSection('journey', 'budgets')} aria-label="Edit construction phase budgets"><div className="row"><span>Budget utilization</span><strong>{totalBudget ? Math.round(spentRatio) + '%' : 'Set budget'}</strong></div><progress max={100} value={spentRatio} /><small>{money(summary.projectCost)} spent {totalBudget ? 'of ' + money(totalBudget) : '· no complete budget yet'}</small><span className="metricCta">Manage budget allocation <ArrowRight size={13}/></span></button>
         <div className="overviewStats"><span><CheckCircle2 size={16} /> {state.construction.schedule.filter(t => t.status === 'COMPLETED').length} tasks complete</span><span><Wrench size={16} /> {activeSchedules} ongoing</span></div>
       </section>
     </div>
@@ -243,7 +270,7 @@ export function Home({ state, txs, save, openSection }: HomeProps) {
       </section>
       <section className="panel">
         <div className="sectionHead"><div><h2>Recent activity</h2><p>Transactions from your actual ledger</p></div><button className="textLink" type="button" onClick={() => openSection('ledger')}>All entries <ArrowRight size={15} /></button></div>
-        {recent.length ? recent.map(tx => <button type="button" key={tx.id} className="activityListItem" onClick={() => openSection('ledger')}>
+        {recent.length ? recent.map(tx => <button type="button" key={tx.id} className="activityListItem" onClick={() => openSection('ledger', tx.id)}>
           <span className="activityGlyph"><Receipt size={17} /></span><span><b>{tx.payee || tx.category || statusLabel(tx.type)}</b><small>{new Date(tx.transactionDate).toLocaleDateString('en-IN')} · {statusLabel(tx.type)}</small></span><strong>{money(tx.amount)}</strong>
         </button>) : <div className="emptySection"><Receipt size={24} /><span>No transactions yet.</span><button type="button" className="textLink" onClick={() => openSection('add')}>Record first entry <Plus size={14} /></button></div>}
       </section>
