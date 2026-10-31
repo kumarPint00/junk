@@ -376,3 +376,130 @@ input[type="range"]{accent-color:#19ad7d}
 .scheduleRecord:last-of-type:after{display:none}
 .scheduleRecord>.sectionHead{align-items:center}
 @media(max-width:600px){.cashForecastGraph{padding:12px 9px}.cashGraphColumns{gap:2px}.cashGraphBars{gap:3px}.cashGraphColumn>span{font-size:8px}.scheduleRecord{margin-left:15px}}
+
+
+/* V2.6 interaction and editing affordances */
+.metricAction{
+  appearance:none;
+  text-align:left;
+  color:var(--text);
+  width:100%;
+  cursor:pointer;
+  min-height:170px;
+  align-items:stretch;
+}
+.metricAction:hover,.metricAction:focus-visible{
+  background:#fafffc;
+  border-color:#a8dec9;
+  box-shadow:0 11px 30px rgba(19,105,78,.11);
+  transform:translateY(-2px);
+}
+.metricCta{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  margin-top:auto;
+  padding-top:9px;
+  color:#108d67;
+  font-size:10px;
+  font-weight:790;
+}
+.dashboardActions{
+  display:flex;
+  gap:9px;
+  flex-wrap:wrap;
+  margin-top:-4px;
+}
+.dashboardActions button{
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-height:37px;
+  border-radius:10px;
+  padding:8px 12px;
+  border:1px solid #daebe3;
+  background:#fff;
+  color:#25795f;
+  cursor:pointer;
+  font-size:11px;
+  font-weight:740;
+}
+.dashboardActions button:hover{
+  background:#e9f8ef;
+  border-color:#a9d9c6;
+}
+.chartAction,.progressAction,.budgetAction{
+  appearance:none;
+  background:transparent;
+  color:inherit;
+  border:0;
+  width:100%;
+  cursor:pointer;
+  text-align:left;
+  font:inherit;
+}
+.chartAction{padding:21px 0 5px}
+.chartAction:hover{background:linear-gradient(to bottom,#fafefd,transparent)}
+.progressAction{padding:23px 2px 17px}
+.progressAction:hover .progressSummary .metricCta,
+.budgetAction:hover .metricCta{text-decoration:underline}
+.budgetAction{display:block;padding:8px 0 0}
+.budgetAction .metricCta{padding-top:8px}
+.controlHelp{background:#f8fcfa}
+.controlShortcuts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.controlSaveBar{
+  position:sticky;
+  z-index:23;
+  top:84px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:15px;
+  border-radius:16px;
+  padding:12px 16px;
+  border:1px solid #cae5d8;
+  background:rgba(244,253,248,.98);
+  box-shadow:0 8px 22px rgba(24,73,52,.07);
+  backdrop-filter:blur(12px);
+}
+.controlSaveBar>div:first-child{min-width:0;flex:1}
+.controlSaveBar b{display:block;font-size:12px;color:#116e50}
+.controlSaveBar small{display:block;color:#587e6d;font-size:10px;margin-top:4px;line-height:1.4}
+.controlSaveBar .controlFeedback{color:#387c65;font-weight:650}
+.controlSaveBar .formActions{flex:none}
+.focusSection,.journeySaveBar{scroll-margin-top:150px}
+.focusSection:focus-within{border-color:#b2e1cf}
+.summaryEdit{float:right;margin-right:18px;color:#138f6b;font-size:11px;font-weight:760}
+.controlValueLabel{display:grid;gap:4px;font-size:10px;color:#647b8f}
+.controlValueLabel input{min-width:100px;width:100%}
+.ledgerQuickActions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.ledgerQuickActions span{font-size:11px;color:var(--muted)}
+.transactionDetails{border:1px solid #a6d9c7;scroll-margin-top:120px}
+.transactionDetailAmount{font-size:clamp(23px,2.8vw,34px);font-weight:850;letter-spacing:-.04em;margin:14px 0 19px;color:#115a46}
+.transactionFacts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.transactionFacts>div{min-width:0;background:#f7fafc;border:1px solid #e7edf3;border-radius:10px;padding:11px;display:grid;gap:7px}
+.transactionFacts small{font-size:10px;color:var(--muted)}
+.transactionFacts b{font-size:11px;color:var(--text);overflow-wrap:anywhere}
+.transactionAdvice{border:1px solid #f2dfb2;background:#fffaf0;color:#8b6526;font-size:11px;border-radius:11px;padding:11px;line-height:1.45;margin:13px 0}
+.detailLink{border:0;background:transparent;color:#118a65;font-size:11px;font-weight:750;cursor:pointer;padding:8px 0 3px;text-align:left}
+.detailLink:hover{text-decoration:underline}
+@media(max-width:1040px){
+  .transactionFacts{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .controlSaveBar{top:70px;padding:10px 11px;gap:7px;flex-wrap:wrap}
+  .controlSaveBar .formActions{margin-left:auto}
+  .controlSaveBar .formActions button{min-height:34px;padding:8px 10px;flex:none}
+  .dashboardActions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dashboardActions button{font-size:10px;padding:8px 9px}
+  .metricAction{min-height:166px}
+  .summaryEdit{font-size:10px}
+}
+@media(max-width:400px){
+  .controlSaveBar b{font-size:11px}
+  .controlSaveBar small{font-size:9px}
+  .transactionFacts{gap:7px}
+  .transactionFacts>div{padding:9px}
+  .metricAction{min-height:163px}
+  .metricAction .metricCta{font-size:9px}
+}

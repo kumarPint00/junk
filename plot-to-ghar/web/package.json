@@ -1,7 +1,7 @@
 {
   "name": "plot-to-ghar-web",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.5.1",
   "scripts": {
     "dev": "next dev",
     "build": "node scripts/build-brand-assets.mjs && next build",

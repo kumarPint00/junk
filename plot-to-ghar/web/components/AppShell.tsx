@@ -63,8 +63,20 @@ export function AppShell() {
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [tab, setTab] = useState<Tab>('home');
   const [buildTab, setBuildTab] = useState<BuildTab>('floors');
+  const [journeyFocus, setJourneyFocus] = useState<'budgets' | 'milestones'>('milestones');
+  const [controlFocus, setControlFocus] = useState<'property' | 'accounts' | 'funding' | 'partners' | 'cash'>('property');
+  const [ledgerFocus, setLedgerFocus] = useState<string | null>(null);
+  const [ledgerType, setLedgerType] = useState<'ALL' | TxType>('ALL');
   function goTo(section: Tab, feature?: string) {
     if (section === 'build' && feature && constructionTabs.some(t => t.id === feature)) setBuildTab(feature as BuildTab);
+    if (section === 'journey') setJourneyFocus(feature === 'budgets' ? 'budgets' : 'milestones');
+    if (section === 'more' && ['property','accounts','funding','partners','cash'].includes(feature || '')) {
+      setControlFocus(feature as typeof controlFocus);
+    }
+    if (section === 'ledger') {
+      setLedgerFocus(feature && !['expenses','funding'].includes(feature) ? feature : null);
+      setLedgerType(feature === 'expenses' ? 'EXPENSE' : feature === 'funding' ? 'FUNDING_IN' : 'ALL');
+    }
     setTab(section);
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'auto' });
   }
@@ -325,6 +337,7 @@ export function AppShell() {
       }
     } catch (e) {
       setToast(e instanceof Error ? e.message : 'Save failed');
+      throw e; // Editors must never report success when validation or persistence failed.
     } finally {
       setBusy(false);
     }
@@ -558,11 +571,11 @@ export function AppShell() {
 
       <main className="content">
         {tab === 'home' ? <Home state={state} txs={txs} save={saveState} openSection={goTo} /> : null}
-        {tab === 'journey' ? <Journey state={state} save={saveState} /> : null}
-        {tab === 'build' ? <ConstructionHub initialTab={buildTab} state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); goTo('add'); }} /> : null}
+        {tab === 'journey' ? <Journey state={state} save={saveState} focusSection={journeyFocus} onEditProperty={() => goTo('more','property')} /> : null}
+        {tab === 'build' ? <ConstructionHub initialTab={buildTab} state={state} txs={txs} save={saveState} mode={mode} onScanned={(draft) => { setScanDraft(draft); goTo('add'); }} onEditFunding={() => goTo('more', 'funding')} /> : null}
         {tab === 'add' ? <AddTransaction key={scanDraft ? 'scan-' + scanDraft.date + '-' + scanDraft.amount + '-' + (scanDraft.attachment?.pathname || '') : 'manual'} prefill={scanDraft || undefined} state={state} txs={txs} onSave={async (t) => { await postTx(t); setScanDraft(null); }} mode={mode} /> : null}
-        {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} /> : null}
-        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} /> : null}
+        {tab === 'ledger' ? <Ledger state={state} txs={txs} onVoid={voidTx} mode={mode} initialType={ledgerType} focusTransactionId={ledgerFocus} onAdd={() => goTo('add')} /> : null}
+        {tab === 'more' ? <More state={state} txs={txs} save={saveState} reload={reload} mode={mode} onLock={lockApp} focusSection={controlFocus} openSection={goTo} /> : null}
       </main>
 
       <nav className="appNav" aria-label="Primary navigation">
