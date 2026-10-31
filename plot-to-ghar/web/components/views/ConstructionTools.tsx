@@ -220,7 +220,7 @@ export function ProgressView({state,patch,mode}:ChildProps) {
   </div>;
 }
 
-export function FinanceView({state,txs}:ChildProps){
+export function FinanceView({state,txs,onEditFunding}:ChildProps){
   const loan=state.loans[0];
   const fromSource=txs.filter((t)=>['FUNDING_IN','DIRECT_FUNDED_EXPENSE'].includes(t.type) && state.fundingSources.some((f)=>f.id===t.fundingSourceId && ['PURCHASE_LOAN','CONSTRUCTION_LOAN'].includes(f.type))).reduce((s,t)=>s+t.amount,0);
   const loanRepayments=txs.filter((t)=>t.type==='LOAN_REPAYMENT').reduce((s,t)=>s+t.amount,0);
@@ -250,7 +250,9 @@ export function FinanceView({state,txs}:ChildProps){
   const cashFlowMax = Math.max(1, ...forecast.flatMap(x => [x.inflow, x.planned + x.emiOutflow]));
   return <div className="stack">
     <section className="panel">
-      <h2>Loan repayment scenario</h2>
+      <div className="sectionHead"><h2>Loan repayment scenario</h2>
+        {onEditFunding && <button className="secondary small" type="button" onClick={onEditFunding}>Edit saved loan terms ✎</button>}
+      </div>
       <p className="muted">Sanctioned amount {money(loan?.sanctionedAmount||0)} · Recorded loan disbursements {money(fromSource)} · Recorded EMI/repayment cash outflow {money(loanRepayments)}.</p>
       <p className="warning">The ledger does not separate EMI principal vs interest, so outstanding principal is entered manually from your lender statement. Never treat sanction amount as cash received.</p>
       <div className="grid2">
@@ -306,6 +308,7 @@ export function RemindersView({state,patch}:ChildProps){
   const [category,setCategory]=useState<ProjectReminder['category']>('WORK');
   const [repeat,setRepeat]=useState<ProjectReminder['repeat']>('NONE');
   const [error,setError]=useState('');
+  const [editingId,setEditingId]=useState<string|null>(null);
   const [permission,setPermission]=useState(typeof Notification==='undefined'?'unavailable':Notification.permission);
   const dueNow=dueReminders(reminders,new Date());
   const nativeBridge = typeof window !== 'undefined'
@@ -314,11 +317,30 @@ export function RemindersView({state,patch}:ChildProps){
   useEffect(() => {
     try { nativeBridge?.syncReminders(JSON.stringify(reminders)); } catch { /* Browser-only app */ }
   }, [reminders, nativeBridge]);
+  function editReminder(r:ProjectReminder) {
+    setEditingId(r.id);setTitle(r.title);setDue(r.dueDate);setCategory(r.category);setRepeat(r.repeat);setError('');
+    document.getElementById('ptg-reminder-editor')?.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+  function cancelReminderEdit(){
+    setEditingId(null);setTitle('');setDue(dateNow());setCategory('WORK');setRepeat('NONE');setError('');
+  }
+  async function removeReminder(id:string){
+    const r=reminders.find(x=>x.id===id);
+    if(!r||!window.confirm('Remove reminder "'+r.title+'"? This also cancels its future local notifications.'))return;
+    try{await patch({reminders:reminders.filter(x=>x.id!==id)});if(editingId===id)cancelReminderEdit();}
+    catch(e){setError(e instanceof Error?e.message:'Unable to remove reminder');}
+  }
   async function add(e:React.FormEvent){
     e.preventDefault();
     if(!title.trim()||!/^\d{4}-\d{2}-\d{2}$/.test(due)){setError('Enter title and valid date.');return;}
-    await patch({reminders:[...reminders,{id:crypto.randomUUID(),title:title.trim(),dueDate:due,category,repeat,completed:false}]});
-    setTitle('');setError('');
+    const prior=reminders.find(x=>x.id===editingId);
+    const updated:ProjectReminder=prior
+      ? {...prior,title:title.trim(),dueDate:due,category,repeat,completed:false,lastNotifiedDate:undefined}
+      : {id:crypto.randomUUID(),title:title.trim(),dueDate:due,category,repeat,completed:false};
+    try {
+      await patch({reminders:prior?reminders.map(x=>x.id===prior.id?updated:x):[...reminders,updated]});
+      cancelReminderEdit();
+    } catch(e){setError(e instanceof Error?e.message:'Unable to save reminder');}
   }
   async function mark(id:string,completed:boolean){
     await patch({reminders:reminders.map((r)=>r.id===id?{...r,completed}:r)});
@@ -346,9 +368,11 @@ export function RemindersView({state,patch}:ChildProps){
         <div className="sectionHead"><b>{r.title}</b><span className="status">{r.category}</span></div>
         <small className="muted">{r.dueDate} · {r.repeat==='MONTHLY'?'Every month':'Once'}</small>
         <label className="check"><input type="checkbox" checked={r.completed} onChange={(e)=>mark(r.id,e.target.checked)}/>Done</label>
+        <div className="taskActions"><button className="secondary small" type="button" onClick={()=>editReminder(r)}>Edit reminder</button>
+          <button className="danger small" type="button" onClick={()=>removeReminder(r.id)}>Delete</button></div>
       </div>)}
     </section>
-    <form className="panel form" onSubmit={add}><h2>New reminder</h2>
+    <form id="ptg-reminder-editor" className="panel form" onSubmit={add}><h2>{editingId?'Edit reminder':'New reminder'}</h2>
       <label>Reminder<input required value={title} onChange={(e)=>setTitle(e.target.value)} placeholder="Construction loan EMI" /></label>
       <div className="grid3">
         <label>Due date<input type="date" required value={due} onChange={(e)=>setDue(e.target.value)}/></label>
@@ -357,7 +381,8 @@ export function RemindersView({state,patch}:ChildProps){
         </select></label>
         <label>Repeat<select value={repeat} onChange={(e)=>setRepeat(e.target.value as ProjectReminder['repeat'])}><option value="NONE">Once</option><option value="MONTHLY">Monthly</option></select></label>
       </div>
-      <ErrorLine message={error}/><button className="primary" type="submit">Add reminder</button>
+      <ErrorLine message={error}/><div className="formActions"><button className="primary" type="submit">{editingId?'Save reminder changes':'Add reminder'}</button>
+        {editingId && <button className="secondary" type="button" onClick={cancelReminderEdit}>Cancel edit</button>}</div>
     </form>
   </div>;
 }
