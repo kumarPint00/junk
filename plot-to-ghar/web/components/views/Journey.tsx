@@ -71,6 +71,17 @@ export function Journey({
     <div className="stack">
       <PageTitle title="Property Journey" description="Edit milestone status, phase budgets and progress. Save when you finish." />
 
+      <div className="controlSaveBar journeySaveBar" role="status">
+        <div><b>{hasChanges ? 'Unsaved journey changes' : 'Milestones and budgets are saved'}</b>
+          <small>{hasChanges ? 'Save status, budget and progress edits below.' : 'Actual financial spending is never edited from this screen.'}</small>
+          {feedback && <small className="controlFeedback">{feedback}</small>}
+        </div>
+        <div className="formActions">
+          <button type="button" className="secondary small" disabled={!hasChanges || saving} onClick={() => {setDraft(structuredClone(state));setFeedback('Edits discarded.');}}>Discard</button>
+          <button type="button" className="primary" disabled={!hasChanges || saving} onClick={saveJourney}>{saving ? 'Saving…' : 'Save journey'}</button>
+        </div>
+      </div>
+
       <section className="panel timeline" id="ptg-journey-milestones">
         <div className="sectionHead"><div><h2>Project milestones</h2><p>Change any status below, then save your updates.</p></div><span className="summaryEdit">Editable ✎</span></div>
         {draft.milestones
@@ -152,16 +163,7 @@ export function Journey({
         </div>
 
       </section>
-      <div className="controlSaveBar journeySaveBar" role="status">
-        <div><b>{hasChanges ? 'Unsaved journey changes' : 'Milestones and budgets are saved'}</b>
-          <small>{hasChanges ? 'Save status, budget and progress edits below.' : 'Actual financial spending is never edited from this screen.'}</small>
-          {feedback && <small className="controlFeedback">{feedback}</small>}
-        </div>
-        <div className="formActions">
-          <button type="button" className="secondary small" disabled={!hasChanges || saving} onClick={() => {setDraft(structuredClone(state));setFeedback('Edits discarded.');}}>Discard</button>
-          <button type="button" className="primary" disabled={!hasChanges || saving} onClick={saveJourney}>{saving ? 'Saving…' : 'Save journey'}</button>
-        </div>
-      </div>
+
     </div>
   );
 }
