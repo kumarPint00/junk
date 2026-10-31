@@ -14,6 +14,7 @@ export type SuiteProps = {
   save: (next: ProjectState) => Promise<void>;
   mode: 'standalone' | 'cloud';
   onScanned: (draft: { amount: string; date: string; payee: string; description: string; attachment?: import('@/lib/types').AttachmentRef }) => void;
+  onEditFunding?: () => void;
 };
 export type UpdateSuite = (patch: Partial<ConstructionSuite>) => Promise<void>;
 
