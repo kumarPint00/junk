@@ -135,6 +135,13 @@ export function More({
   return (
     <div className="stack">
       <PageTitle title="Project Control" description="Edit property, accounts, funding, loans and contractors. Save changes using the bar below." />
+      <div className="controlSaveBar" role="status">
+        <div><b>{hasEdits ? 'Unsaved changes' : 'All settings saved'}</b><small>{hasEdits ? 'Save your edits before leaving this screen.' : 'Your latest property configuration is displayed.'}</small>
+          {feedback && <small className="controlFeedback">{feedback}</small>}</div>
+        <div className="formActions"><button type="button" className="secondary small" disabled={!hasEdits || saving} onClick={() => {setDraft(structuredClone(state));setFeedback('Edits discarded.');}}>Discard</button>
+        <button type="button" className="primary" disabled={!hasEdits || saving} onClick={saveControls}>{saving ? 'Saving…' : 'Save changes'}</button></div>
+      </div>
+
       <section className="panel controlHelp">
         <div className="sectionHead"><div><h2>What can I change?</h2><p>Configuration can be edited here. Actual spending and current balances are calculated from transactions.</p></div></div>
         <div className="controlShortcuts">
@@ -256,12 +263,7 @@ export function More({
         </div>
       </details>
 
-      <div className="controlSaveBar" role="status">
-        <div><b>{hasEdits ? 'Unsaved changes' : 'All settings saved'}</b><small>{hasEdits ? 'Save your edits before leaving this screen.' : 'Your latest property configuration is displayed.'}</small>
-          {feedback && <small className="controlFeedback">{feedback}</small>}</div>
-        <div className="formActions"><button type="button" className="secondary small" disabled={!hasEdits || saving} onClick={() => {setDraft(structuredClone(state));setFeedback('Edits discarded.');}}>Discard</button>
-        <button type="button" className="primary" disabled={!hasEdits || saving} onClick={saveControls}>{saving ? 'Saving…' : 'Save changes'}</button></div>
-      </div>
+
 
       <section className="panel">
         <h2>Backup & recovery</h2>
